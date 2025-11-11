@@ -1,8 +1,5 @@
 import os
-try:
-    import boto3
-except Exception:
-    boto3 = None
+import boto3
 
 
 def create_topic(name):

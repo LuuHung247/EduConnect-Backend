@@ -13,326 +13,186 @@ from app.services.serie_service import (
     get_all_series_by_user,
 )
 
-bp = Blueprint("series", __name__, url_prefix="/api/series")
+# API Version 1
+bp = Blueprint("series", __name__, url_prefix="/api/v1/series")
+
+
+def _success_response(data, message=None, status=200):
+    """Helper: Create success response"""
+    response = {"success": True, "data": data}
+    if message:
+        response["message"] = message
+    return jsonify(response), status
+
+
+def _error_response(message, status=500):
+    """Helper: Create error response"""
+    return jsonify({"success": False, "message": message}), status
 
 
 @bp.route("/", methods=["POST"])
 @authenticate_jwt
-def post_serie():
-    """Create a series
-
-    ---
-    tags:
-      - Series
-    requestBody:
-      content:
-        multipart/form-data:
-          schema:
-            type: object
-            properties:
-              title:
-                type: string
-              description:
-                type: string
-              serie_thumbnail:
-                type: string
-                format: binary
-    responses:
-      201:
-        description: Created
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                success:
-                  type: boolean
-                data:
-                  $ref: '#/definitions/Serie'
-                message:
-                  type: string
-    security:
-      - BearerAuth: []
-    """
-    # multer handled files in Node; here we accept multipart but keep simple
-    data = request.form.to_dict() if request.form else request.get_json() or {}
-    file = request.files.get("serie_thumbnail") if request.files else None
-    user_id = g.user.get("userId")
-    result = create_serie(data, user_id, g.user.get("idToken"), file)
-    return jsonify(result), 201
+def create_serie_route():
+    """Create a new series"""
+    try:
+        data = request.form.to_dict() if request.form else request.get_json() or {}
+        file = request.files.get("serie_thumbnail") if request.files else None
+        
+        user_id = g.user.get("userId")
+        id_token = g.user.get("idToken")
+        
+        result = create_serie(data, user_id, id_token, file)
+        return _success_response(result, "Series created successfully", 201)
+    
+    except Exception as e:
+        return _error_response(str(e))
 
 
 @bp.route("/", methods=["GET"])
-def get_series():
-    """List series
-
-    ---
-    tags:
-      - Series
-    parameters:
-      - in: query
-        name: page
-        schema:
-          type: integer
-        required: false
-    responses:
-      200:
-        description: OK
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                success:
-                  type: boolean
-                data:
-                  type: array
-                  items:
-                    $ref: '#/definitions/Serie'
-                message:
-                  type: string
-    """
-    res = get_all_series(request.args)
-    return jsonify(res), 200
+@authenticate_jwt
+def list_series():
+    """List all series with optional pagination"""
+    try:
+        query_params = request.args.to_dict()
+        result = get_all_series(query_params)
+        return _success_response(result)
+    
+    except Exception as e:
+        return _error_response(str(e))
 
 
 @bp.route("/subscribed", methods=["GET"])
 @authenticate_jwt
-def get_subscribed():
-    """Get series subscribed by user
-
-    ---
-    tags:
-      - Series
-    responses:
-      200:
-        description: OK
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                success:
-                  type: boolean
-                data:
-                  type: array
-                  items:
-                    $ref: '#/definitions/Serie'
-                message:
-                  type: string
-    security:
-      - BearerAuth: []
-    """
-    res = get_series_subscribed_by_user(g.user.get("userId"))
-    return jsonify(res), 200
+def get_user_subscribed_series():
+    """Get series subscribed by current user"""
+    try:
+        user_id = g.user.get("userId")
+        result = get_series_subscribed_by_user(user_id)
+        return _success_response(result)
+    
+    except Exception as e:
+        return _error_response(str(e))
 
 
 @bp.route("/created", methods=["GET"])
 @authenticate_jwt
-def get_created():
-    """Get series created by current user
-
-    ---
-    tags:
-      - Series
-    responses:
-      200:
-        description: OK
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                success:
-                  type: boolean
-                data:
-                  type: array
-                  items:
-                    $ref: '#/definitions/Serie'
-                message:
-                  type: string
-    security:
-      - BearerAuth: []
-    """
-    res = get_all_series_by_user(g.user.get("userId"))
-    return jsonify(res), 200
+def get_user_created_series():
+    """Get series created by current user"""
+    try:
+        user_id = g.user.get("userId")
+        result = get_all_series_by_user(user_id)
+        return _success_response(result)
+    
+    except Exception as e:
+        return _error_response(str(e))
 
 
 @bp.route("/search", methods=["GET"])
-def search():
-    """Search series by keyword
-
-    ---
-    tags:
-      - Series
-    parameters:
-      - in: query
-        name: keyword
-        required: true
-        schema:
-          type: string
-    responses:
-      200:
-        description: OK
-      400:
-        description: Missing keyword
-    """
-    keyword = request.args.get("keyword")
-    if not keyword:
-        return jsonify({"message": "Thiếu từ khóa tìm kiếm"}), 400
-    res = search_series_by_title(keyword)
-    return jsonify(res), 200
+def search_series():
+    """Search series by keyword"""
+    try:
+        keyword = request.args.get("keyword")
+        
+        if not keyword:
+            return _error_response("Thiếu từ khóa tìm kiếm", 400)
+        
+        result = search_series_by_title(keyword)
+        return _success_response(result)
+    
+    except Exception as e:
+        return _error_response(str(e))
 
 
 @bp.route("/<serie_id>", methods=["GET"])
-def get_serie(serie_id):
-    """Get a series by id
-
-    ---
-    tags:
-      - Series
-    parameters:
-      - in: path
-        name: serie_id
-        required: true
-        schema:
-          type: string
-    responses:
-      200:
-        description: OK
-        content:
-          application/json:
-            schema:
-              $ref: '#/definitions/Serie'
-      404:
-        description: Not found
-    """
-    s = get_serie_by_id(serie_id)
-    if not s:
-        return jsonify({"message": "Serie not found"}), 404
-    return jsonify(s), 200
+def get_serie_detail(serie_id):
+    """Get series details by ID"""
+    try:
+        serie = get_serie_by_id(serie_id)
+        
+        if not serie:
+            return _error_response("Serie not found", 404)
+        
+        return _success_response(serie)
+    
+    except Exception as e:
+        return _error_response(str(e))
 
 
 @bp.route("/<serie_id>", methods=["PATCH"])
 @authenticate_jwt
-def patch_serie(serie_id):
-    """Update a series
-
-    ---
-    tags:
-      - Series
-    parameters:
-      - in: path
-        name: serie_id
-        required: true
-        schema:
-          type: string
-    requestBody:
-      content:
-        multipart/form-data:
-          schema:
-            type: object
-    responses:
-      200:
-        description: Updated
-      404:
-        description: Not found
-    security:
-      - BearerAuth: []
-    """
-    data = request.form.to_dict() if request.form else request.get_json() or {}
-    file = request.files.get("serie_thumbnail") if request.files else None
-    updated = update_serie(serie_id, data, g.user.get("userId"), g.user.get("idToken"), file)
-    if not updated:
-        return jsonify({"message": "Serie not found"}), 404
-    return jsonify(updated), 200
+def update_serie_route(serie_id):
+    """Update series information"""
+    try:
+        data = request.form.to_dict() if request.form else request.get_json() or {}
+        file = request.files.get("serie_thumbnail") if request.files else None
+        
+        user_id = g.user.get("userId")
+        id_token = g.user.get("idToken")
+        
+        updated = update_serie(serie_id, data, user_id, id_token, file)
+        
+        if not updated:
+            return _error_response("Serie not found", 404)
+        
+        return _success_response(updated, "Series updated successfully")
+    
+    except Exception as e:
+        return _error_response(str(e))
 
 
 @bp.route("/<serie_id>/subscribe", methods=["POST"])
 @authenticate_jwt
-def subscribe(serie_id):
-    """Subscribe current user to a series
-
-    ---
-    tags:
-      - Series
-    parameters:
-      - in: path
-        name: serie_id
-        required: true
-        schema:
-          type: string
-    responses:
-      200:
-        description: OK
-    security:
-      - BearerAuth: []
-    """
-    user_id = g.user.get("userId")
-    user_email = g.user.get("email")
-    if not user_id or not user_email:
-        return jsonify({"message": "Thiếu thông tin người dùng"}), 400
-    result = subscribe_serie(serie_id, user_id, user_email)
-    return jsonify(result), 200
+def subscribe_to_serie(serie_id):
+    """Subscribe current user to a series"""
+    try:
+        user_id = g.user.get("userId")
+        user_email = g.user.get("email")
+        
+        if not user_id or not user_email:
+            return _error_response("Thiếu thông tin người dùng", 400)
+        
+        result = subscribe_serie(serie_id, user_id, user_email)
+        return _success_response(result)
+    
+    except ValueError as e:
+        return _error_response(str(e), 404)
+    except Exception as e:
+        return _error_response(str(e))
 
 
 @bp.route("/<serie_id>/unsubscribe", methods=["POST"])
 @authenticate_jwt
-def unsubscribe(serie_id):
-    """Unsubscribe current user from a series
-
-    ---
-    tags:
-      - Series
-    parameters:
-      - in: path
-        name: serie_id
-        required: true
-        schema:
-          type: string
-    responses:
-      200:
-        description: OK
-    security:
-      - BearerAuth: []
-    """
-    user_id = g.user.get("userId")
-    user_email = g.user.get("email")
-    if not user_id or not user_email:
-        return jsonify({"message": "Thiếu thông tin người dùng"}), 400
-    result = unsubscribe_serie(serie_id, user_id, user_email)
-    return jsonify(result), 200
+def unsubscribe_from_serie(serie_id):
+    """Unsubscribe current user from a series"""
+    try:
+        user_id = g.user.get("userId")
+        user_email = g.user.get("email")
+        
+        if not user_id or not user_email:
+            return _error_response("Thiếu thông tin người dùng", 400)
+        
+        result = unsubscribe_serie(serie_id, user_id, user_email)
+        return _success_response(result)
+    
+    except ValueError as e:
+        return _error_response(str(e), 404)
+    except Exception as e:
+        return _error_response(str(e))
 
 
 @bp.route("/<serie_id>", methods=["DELETE"])
 @authenticate_jwt
-def delete(serie_id):
-    """Delete a series
-
-    ---
-    tags:
-      - Series
-    parameters:
-      - in: path
-        name: serie_id
-        required: true
-        schema:
-          type: string
-    responses:
-      200:
-        description: Deleted
-      404:
-        description: Not found
-    security:
-      - BearerAuth: []
-    """
-    deleted = delete_serie(serie_id)
-    if not deleted:
-        return jsonify({"message": "Serie not found"}), 404
-    return jsonify({"message": "Serie deleted successfully"}), 200
-
-
-@bp.route("/<serie_id>/lessons", methods=["GET", "POST"])
-def series_lessons_proxy(serie_id):
-    # The lessons blueprint will be registered with merge_params; single-file proxy kept for simplicity
-    return jsonify({"message": "Use /api/series/<id>/lessons/* endpoints"}), 200
+def delete_serie_route(serie_id):
+    """Delete a series"""
+    try:
+        result = delete_serie(serie_id)
+        
+        if not result.get("success"):
+            return _error_response(result.get("warning"), 400)
+        
+        return _success_response(None, "Serie deleted successfully")
+    
+    except ValueError as e:
+        return _error_response(str(e), 404)
+    except Exception as e:
+        return _error_response(str(e))

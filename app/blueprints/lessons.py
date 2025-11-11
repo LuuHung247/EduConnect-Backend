@@ -9,244 +9,131 @@ from app.services.lesson_service import (
     delete_document_by_url,
 )
 
+# API Version 1
+bp = Blueprint("lessons", __name__, url_prefix="/api/v1/series/<series_id>/lessons")
 
-bp = Blueprint("lessons", __name__, url_prefix="/api/series/<series_id>/lessons")
+
+def _success_response(data, message=None, status=200):
+    """Helper: Create success response"""
+    response = {"success": True, "data": data}
+    if message:
+        response["message"] = message
+    return jsonify(response), status
+
+
+def _error_response(message, status=500):
+    """Helper: Create error response"""
+    return jsonify({"success": False, "message": message}), status
 
 
 @bp.route("/", methods=["POST"])
 @authenticate_jwt
-def post_lesson(series_id):
-    """Create a lesson in a series
-
-    ---
-    tags:
-      - Lessons
-    requestBody:
-      content:
-        multipart/form-data:
-          schema:
-            type: object
-            properties:
-              title:
-                type: string
-              content:
-                type: string
-              files:
-                type: array
-                items:
-                  type: string
-                  format: binary
-    responses:
-      201:
-        description: Created
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                success:
-                  type: boolean
-                data:
-                  $ref: '#/definitions/Lesson'
-                message:
-                  type: string
-    security:
-      - BearerAuth: []
-    """
-    data = dict(request.form) if request.form else (request.get_json() or {})
-    data = {**data, "lesson_serie": series_id}
-    files = request.files
-    lesson = create_lesson(data, g.user.get("userId"), g.user.get("idToken"), files)
-    return jsonify(lesson), 201
+def create_lesson_route(series_id):
+    """Create a new lesson in a series"""
+    try:
+        data = dict(request.form) if request.form else (request.get_json() or {})
+        data["lesson_serie"] = series_id
+        
+        files = request.files if request.files else None
+        user_id = g.user.get("userId")
+        id_token = g.user.get("idToken")
+        
+        lesson = create_lesson(data, user_id, id_token, files)
+        return _success_response(lesson, "Lesson created successfully", 201)
+    
+    except Exception as e:
+        return _error_response(str(e))
 
 
 @bp.route("/", methods=["GET"])
 @authenticate_jwt
-def get_lessons(series_id):
-    """List lessons for a series
-
-    ---
-    tags:
-      - Lessons
-    responses:
-      200:
-        description: OK
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                success:
-                  type: boolean
-                data:
-                  type: array
-                  items:
-                    $ref: '#/definitions/Lesson'
-                message:
-                  type: string
-    security:
-      - BearerAuth: []
-    """
-    lessons = get_all_lessons_by_serie(series_id)
-    return jsonify(lessons), 200
+def list_lessons(series_id):
+    """List all lessons in a series"""
+    try:
+        lessons = get_all_lessons_by_serie(series_id)
+        return _success_response(lessons)
+    
+    except Exception as e:
+        return _error_response(str(e))
 
 
 @bp.route("/<lesson_id>", methods=["GET"])
 @authenticate_jwt
-def get_lesson(series_id, lesson_id):
-    """Get a lesson by id
-
-    ---
-    tags:
-      - Lessons
-    parameters:
-      - in: path
-        name: lesson_id
-        required: true
-        schema:
-          type: string
-    responses:
-      200:
-        description: OK
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                success:
-                  type: boolean
-                data:
-                  $ref: '#/definitions/Lesson'
-                message:
-                  type: string
-      404:
-        description: Not found
-    security:
-      - BearerAuth: []
-    """
-    lesson = get_lesson_by_id(series_id, lesson_id)
-    if not lesson:
-        return jsonify({"message": "Lesson not found"}), 404
-    return jsonify(lesson), 200
+def get_lesson_detail(series_id, lesson_id):
+    """Get lesson details by ID"""
+    try:
+        lesson = get_lesson_by_id(series_id, lesson_id)
+        
+        if not lesson:
+            return _error_response("Lesson not found", 404)
+        
+        return _success_response(lesson)
+    
+    except Exception as e:
+        return _error_response(str(e))
 
 
 @bp.route("/<lesson_id>", methods=["PATCH"])
 @authenticate_jwt
-def patch_lesson(series_id, lesson_id):
-        """Update a lesson
-
-        ---
-        tags:
-          - Lessons
-        parameters:
-          - in: path
-            name: lesson_id
-            required: true
-            schema:
-              type: string
-        requestBody:
-          content:
-            multipart/form-data:
-              schema:
-                type: object
-        responses:
-          200:
-            description: Updated
-            content:
-              application/json:
-                schema:
-                  type: object
-                  properties:
-                    success:
-                      type: boolean
-                    data:
-                      $ref: '#/definitions/Lesson'
-                    message:
-                      type: string
-          404:
-            description: Not found
-        security:
-          - BearerAuth: []
-        """
+def update_lesson_route(series_id, lesson_id):
+    """Update lesson information"""
+    try:
         data = dict(request.form) if request.form else (request.get_json() or {})
-        updated = update_lesson(series_id, lesson_id, data, g.user.get("userId"), g.user.get("idToken"), request.files)
+        files = request.files if request.files else None
+        
+        user_id = g.user.get("userId")
+        id_token = g.user.get("idToken")
+        
+        updated = update_lesson(series_id, lesson_id, data, user_id, id_token, files)
+        
         if not updated:
-                return jsonify({"message": "Lesson not found"}), 404
-        return jsonify(updated), 200
+            return _error_response("Lesson not found", 404)
+        
+        return _success_response(updated, "Lesson updated successfully")
+    
+    except Exception as e:
+        return _error_response(str(e))
 
 
 @bp.route("/<lesson_id>", methods=["DELETE"])
 @authenticate_jwt
-def del_lesson(series_id, lesson_id):
-        """Delete a lesson
-
-        ---
-        tags:
-          - Lessons
-        parameters:
-          - in: path
-            name: lesson_id
-            required: true
-            schema:
-              type: string
-        responses:
-          200:
-            description: Deleted
-          404:
-            description: Not found
-        security:
-          - BearerAuth: []
-        """
+def delete_lesson_route(series_id, lesson_id):
+    """Delete a lesson"""
+    try:
         deleted = delete_lesson(series_id, lesson_id)
+        
         if not deleted:
-                return jsonify({"message": "Lesson not found"}), 404
-        return jsonify({"message": "Lesson deleted successfully"}), 200
+            return _error_response("Lesson not found", 404)
+        
+        return _success_response(None, "Lesson deleted successfully")
+    
+    except ValueError as e:
+        return _error_response(str(e), 404)
+    except Exception as e:
+        return _error_response(str(e))
 
 
 @bp.route("/<lesson_id>/documents", methods=["DELETE"])
 @authenticate_jwt
-def del_doc(series_id, lesson_id):
-        """Delete a document from a lesson
-
-        ---
-        tags:
-          - Lessons
-        parameters:
-          - in: path
-            name: lesson_id
-            required: true
-            schema:
-              type: string
-        requestBody:
-          required: true
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  docUrl:
-                    type: string
-        responses:
-          200:
-            description: Deleted
-          400:
-            description: Bad request / document not found
-          404:
-            description: Lesson not found
-        security:
-          - BearerAuth: []
-        """
+def delete_document_route(series_id, lesson_id):
+    """Delete a document from a lesson"""
+    try:
         data = request.get_json() or {}
         doc_url = data.get("docUrl")
+        
         if not doc_url:
-                return jsonify({"message": "docUrl is required"}), 400
-        try:
-                delete_document_by_url(series_id, lesson_id, doc_url)
-                return jsonify({"message": "Document deleted successfully"}), 200
-        except ValueError as e:
-                msg = str(e)
-                if "Lesson không tồn tại" in msg:
-                        return jsonify({"message": "Lesson not found"}), 404
-                if "Document URL không tồn tại" in msg:
-                        return jsonify({"message": "Document not found in lesson"}), 400
-                return jsonify({"message": "Internal Server Error"}), 500
+            return _error_response("docUrl is required", 400)
+        
+        delete_document_by_url(series_id, lesson_id, doc_url)
+        return _success_response(None, "Document deleted successfully")
+    
+    except ValueError as e:
+        error_msg = str(e)
+        if "Lesson không tồn tại" in error_msg:
+            return _error_response("Lesson not found", 404)
+        if "Document URL không tồn tại" in error_msg:
+            return _error_response("Document not found in lesson", 400)
+        return _error_response(error_msg, 400)
+    
+    except Exception as e:
+        return _error_response(str(e))

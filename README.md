@@ -23,12 +23,13 @@ pip install -r requirements.txt
 # development
 export FLASK_APP=app
 export FLASK_ENV=development
-flask run --host=0.0.0.0 --port=5000
+flask run --host=0.0.0.0 --port=5001
 
 # production-like (gunicorn)
 gunicorn -w 2 -b 0.0.0.0:8000 app:app
 ```
 
 Endpoints:
+
 - `GET /health` - health check
 - `GET /api/example` - example endpoint

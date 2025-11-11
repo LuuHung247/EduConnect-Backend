@@ -1,0 +1,1158 @@
+openapi: 3.0.0
+
+info:
+  title: EduConnectBackend API
+  version: 0.1.0
+  description: |
+    RESTful API for EduConnect platform
+
+    ## Authentication
+    Most endpoints require Bearer token authentication.
+    Include the token in the Authorization header: `Bearer <your_token>`
+
+servers:
+  - url: http://localhost:5001
+    description: Development server
+  - url: https://api.educonnect.com
+    description: Production server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Enter your JWT Bearer token
+
+  schemas:
+    User:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: "64f1a0b2c3d4e5f6a7b8c9d0"
+        cognitoUserId:
+          type: string
+          example: "us-east-1_ABC123XYZ"
+        name:
+          type: string
+          example: "Alex Johnson"
+        email:
+          type: string
+          format: email
+          example: "alex@example.com"
+        username:
+          type: string
+          example: "alex123"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Serie:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: "64f1a0b2c3d4e5f6a7b8c9d1"
+        title:
+          type: string
+          example: "Introduction to Python Programming"
+        description:
+          type: string
+          example: "Learn Python from scratch with hands-on projects"
+        thumbnailUrl:
+          type: string
+          format: uri
+          example: "https://cdn.example.com/thumbnails/python-intro.jpg"
+        creatorId:
+          type: string
+          example: "64f1a0b2c3d4e5f6a7b8c9d0"
+        lessons:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Lesson:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: "64f1a0b2c3d4e5f6a7b8c9d2"
+        title:
+          type: string
+          example: "Variables and Data Types"
+        content:
+          type: string
+          example: "In this lesson, we'll learn about Python variables..."
+        seriesId:
+          type: string
+          example: "64f1a0b2c3d4e5f6a7b8c9d1"
+        documents:
+          type: array
+          items:
+            type: string
+            format: uri
+          example: ["https://cdn.example.com/docs/lesson1.pdf"]
+        videoUrl:
+          type: string
+          format: uri
+          example: "https://cdn.example.com/videos/lesson1.mp4"
+        order:
+          type: integer
+          example: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Resource not found"
+        message:
+          type: string
+          example: "The requested user does not exist"
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Users
+    description: User management endpoints
+  - name: Series
+    description: Course series management
+  - name: Lessons
+    description: Lesson management
+
+paths:
+  /api/v1/users/profile:
+    post:
+      tags:
+        - Users
+      summary: Create user profile
+      description: Create a new user profile (public endpoint)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - userId
+              properties:
+                userId:
+                  type: string
+                  description: Cognito User ID
+                  example: "us-east-1_ABC123XYZ"
+                name:
+                  type: string
+                  example: "Alex Johnson"
+                email:
+                  type: string
+                  format: email
+                  example: "alex@example.com"
+                username:
+                  type: string
+                  example: "alex123"
+      responses:
+        "201":
+          description: Profile created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "User profile created successfully"
+                  data:
+                    $ref: "#/components/schemas/User"
+        "400":
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "userId is required"
+        "409":
+          description: Profile already exists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "User profile already exists"
+
+    get:
+      tags:
+        - Users
+      summary: Get current user profile
+      description: Get the authenticated user's profile (auto-creates if not exists)
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Profile found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/User"
+        "201":
+          description: Profile auto-created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "User profile created automatically"
+                  data:
+                    $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+
+  /api/v1/users/{user_id}:
+    get:
+      tags:
+        - Users
+      summary: Get user by ID
+      description: Retrieve a specific user by their ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User ID
+          example: "64f1a0b2c3d4e5f6a7b8c9d0"
+      responses:
+        "200":
+          description: User retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "User not found"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+
+    put:
+      tags:
+        - Users
+      summary: Update user profile
+      description: Update an existing user's information
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: "Alex Smith"
+                email:
+                  type: string
+                  format: email
+                  example: "alex.smith@example.com"
+                username:
+                  type: string
+                  example: "alexsmith"
+      responses:
+        "200":
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "User updated successfully"
+                  data:
+                    $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "User not found"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+
+  /api/v1/series:
+    get:
+      tags:
+        - Series
+      summary: List all series
+      description: Retrieve all series with optional pagination (public endpoint)
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+          description: Page number
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+          description: Items per page
+      responses:
+        "200":
+          description: List of series retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Serie"
+
+    post:
+      tags:
+        - Series
+      summary: Create a new series
+      description: Create a new course series (requires authentication)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - serie_title
+              properties:
+                serie_title:
+                  type: string
+                  example: "Introduction to Python"
+                serie_description:
+                  type: string
+                  example: "Learn Python from scratch"
+                serie_thumbnail:
+                  type: string
+                  format: binary
+                  description: Thumbnail image file
+                isPublish:
+                  type: boolean
+                  default: false
+      responses:
+        "201":
+          description: Series created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Series created successfully"
+                  data:
+                    $ref: "#/components/schemas/Serie"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+
+  /api/v1/series/subscribed:
+    get:
+      tags:
+        - Series
+      summary: Get subscribed series
+      description: Get all series subscribed by current user
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of subscribed series
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Serie"
+
+  /api/v1/series/created:
+    get:
+      tags:
+        - Series
+      summary: Get created series
+      description: Get all series created by current user
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of created series
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Serie"
+
+  /api/v1/series/search:
+    get:
+      tags:
+        - Series
+      summary: Search series
+      description: Search series by keyword in title
+      parameters:
+        - name: keyword
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search keyword
+          example: "python"
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Serie"
+        "400":
+          description: Missing keyword
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Thiếu từ khóa tìm kiếm"
+
+  /api/v1/series/{serie_id}:
+    get:
+      tags:
+        - Series
+      summary: Get series by ID
+      description: Get detailed information about a specific series
+      parameters:
+        - name: serie_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Series ID
+      responses:
+        "200":
+          description: Series details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/Serie"
+        "404":
+          description: Series not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+
+    patch:
+      tags:
+        - Series
+      summary: Update series
+      description: Update series information
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: serie_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                serie_title:
+                  type: string
+                serie_description:
+                  type: string
+                serie_thumbnail:
+                  type: string
+                  format: binary
+                isPublish:
+                  type: boolean
+      responses:
+        "200":
+          description: Series updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Series updated successfully"
+                  data:
+                    $ref: "#/components/schemas/Serie"
+        "404":
+          description: Series not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+
+    delete:
+      tags:
+        - Series
+      summary: Delete series
+      description: Delete a series (cannot delete if it has lessons)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: serie_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Series deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Serie deleted successfully"
+        "400":
+          description: Cannot delete - has lessons
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+        "404":
+          description: Series not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+
+  /api/v1/series/{serie_id}/subscribe:
+    post:
+      tags:
+        - Series
+      summary: Subscribe to series
+      description: Subscribe current user to a series
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: serie_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Subscribed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+        "400":
+          description: Missing user information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+        "404":
+          description: Series not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+
+  /api/v1/series/{serie_id}/unsubscribe:
+    post:
+      tags:
+        - Series
+      summary: Unsubscribe from series
+      description: Unsubscribe current user from a series
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: serie_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Unsubscribed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+        "400":
+          description: Missing user information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+        "404":
+          description: Series not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+
+  /api/v1/series/{series_id}/lessons:
+    post:
+      tags:
+        - Lessons
+      summary: Create a new lesson
+      description: Create a new lesson in a series
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: series_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Series ID
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - lesson_title
+              properties:
+                lesson_title:
+                  type: string
+                  example: "Variables and Data Types"
+                lesson_content:
+                  type: string
+                  example: "In this lesson we'll learn about..."
+                lesson_video:
+                  type: string
+                  format: binary
+                  description: Video file
+                lesson_documents:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: Document files
+      responses:
+        "201":
+          description: Lesson created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Lesson created successfully"
+                  data:
+                    $ref: "#/components/schemas/Lesson"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+
+    get:
+      tags:
+        - Lessons
+      summary: List all lessons
+      description: Get all lessons in a series
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: series_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Series ID
+      responses:
+        "200":
+          description: List of lessons
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Lesson"
+
+  /api/v1/series/{series_id}/lessons/{lesson_id}:
+    get:
+      tags:
+        - Lessons
+      summary: Get lesson by ID
+      description: Get detailed information about a specific lesson
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: series_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Series ID
+        - name: lesson_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Lesson ID
+      responses:
+        "200":
+          description: Lesson details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/Lesson"
+        "404":
+          description: Lesson not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+
+    patch:
+      tags:
+        - Lessons
+      summary: Update lesson
+      description: Update lesson information
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: series_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Series ID
+        - name: lesson_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Lesson ID
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                lesson_title:
+                  type: string
+                lesson_content:
+                  type: string
+                lesson_video:
+                  type: string
+                  format: binary
+                lesson_documents:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        "200":
+          description: Lesson updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Lesson updated successfully"
+                  data:
+                    $ref: "#/components/schemas/Lesson"
+        "404":
+          description: Lesson not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+
+    delete:
+      tags:
+        - Lessons
+      summary: Delete lesson
+      description: Delete a lesson from a series
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: series_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Series ID
+        - name: lesson_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Lesson ID
+      responses:
+        "200":
+          description: Lesson deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Lesson deleted successfully"
+        "404":
+          description: Lesson not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+
+  /api/v1/series/{series_id}/lessons/{lesson_id}/documents:
+    delete:
+      tags:
+        - Lessons
+      summary: Delete a document
+      description: Delete a specific document from a lesson
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: series_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Series ID
+        - name: lesson_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Lesson ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - docUrl
+              properties:
+                docUrl:
+                  type: string
+                  description: URL of the document to delete
+                  example: "https://s3.amazonaws.com/bucket/doc.pdf"
+      responses:
+        "200":
+          description: Document deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Document deleted successfully"
+        "400":
+          description: Missing docUrl or document not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+        "404":
+          description: Lesson not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string

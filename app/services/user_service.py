@@ -1,81 +1,112 @@
-"""User service that uses MongoDB when available; otherwise uses in-memory store.
-This mirrors behaviour from the Node.js user.service.js file where cognitoUserId is used as _id.
-"""
-from uuid import uuid4
-from app.utils.mongodb import connect_to_database
-
-_USERS = {}
+from abc import ABC, abstractmethod
+from typing import Optional, Dict, Any
+from app.utils.mongodb import get_db
 
 
-def _db():
-    return connect_to_database()
+# 1. Interface Repository
+class UserRepository(ABC):
+    """Interface cho User Repository"""
+    
+    @abstractmethod
+    def find_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        pass
+    
+    @abstractmethod
+    def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        pass
+    
+    @abstractmethod
+    def update(self, user_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        pass
 
 
-def create_user(data: dict) -> dict:
-    db = _db()
-    cognito_id = data.get("cognitoUserId") or data.get("cognitoUserId")
-    if db:
-        users = db.collection("users")
+# 2. Implementation: MongoDB
+class MongoUserRepository(UserRepository):
+    """MongoDB implementation"""
+    
+    def _users_collection(self):
+        _, db = get_db()
+        return db["users"]
+
+    def find_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        collection = self._users_collection()
+        return collection.find_one({"_id": user_id})
+    
+    def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        cognito_id = data.get("cognitoUserId")
         if not cognito_id:
             raise ValueError("cognitoUserId is required")
-        data["createdAt"] = None
-        data["updatedAt"] = None
-        existing = users.find_one({"_id": cognito_id})
+
+        collection = self._users_collection()
+
+        # Check existing
+        existing = collection.find_one({"_id": cognito_id})
         if existing:
-            # update existing
-            return update_user_by_cognito_id(cognito_id, data)
-        # insert new
-        payload = {"_id": cognito_id, **{k: v for k, v in data.items() if k != "cognitoUserId"}, "serie_subcribe": []}
-        users.insert_one(payload)
-        return {"_id": cognito_id, **payload}
+            return self.update(cognito_id, data)
+        
+        # Create new
+        payload = {
+            "_id": cognito_id,
+            **{k: v for k, v in data.items() if k != "cognitoUserId"},
+            "serie_subscribe": [],
+            "createdAt": None,
+            "updatedAt": None,
+        }
+        collection.insert_one(payload)
+        return payload
+    
+    def update(self, user_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        collection = self._get_collection()
+        
+        # Sanitize data
+        update_data = {k: v for k, v in data.items() if k not in ("_id", "cognitoUserId", "createdAt")}
+        update_data["updatedAt"] = None
+        
+        return collection.find_one_and_update(
+            {"_id": user_id},
+            {"$set": update_data},
+            return_document=True,
+            upsert=True
+        )
 
-    # fallback in-memory
-    user_id = cognito_id or str(uuid4())
-    user = {"_id": user_id, **data, "serie_subcribe": []}
-    _USERS[user_id] = user
-    return user
 
+# 3. Service đơn giản
+class UserService:
+    """Service quản lý user"""
+    
+    def __init__(self, repository: Optional[UserRepository] = None):
+        self._repository = repository or MongoUserRepository()
+    
+    def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        return self._repository.find_by_id(user_id)
+    
+    def get_user_by_cognito_id(self, cognito_id: str) -> Optional[Dict[str, Any]]:
+        return self._repository.find_by_id(cognito_id)
+    
+    def create_user(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self._repository.create(data)
+    
+    def update_user(self, user_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        return self._repository.update(user_id, data)
+    
+    def update_user_by_cognito_id(self, cognito_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self._repository.update(cognito_id, data)
+
+
+# Public API - giữ backward compatibility
+_service = UserService()
+
+def create_user(data: dict) -> dict:
+    return _service.create_user(data)
 
 def get_user_by_id(user_id: str) -> dict:
-    db = _db()
-    if db:
-        users = db.collection("users")
-        return users.find_one({"_id": user_id})
-    return _USERS.get(user_id)
-
+    return _service.get_user_by_id(user_id)
 
 def get_user_by_cognito_id(cognito_id: str) -> dict:
-    return get_user_by_id(cognito_id)
-
+    return _service.get_user_by_cognito_id(cognito_id)
 
 def update_user(user_id: str, data: dict) -> dict:
-    db = _db()
-    if db:
-        users = db.collection("users")
-        for k in ("_id", "cognitoUserId", "createdAt"):
-            data.pop(k, None)
-        data["updatedAt"] = None
-        result = users.find_one_and_update({"_id": user_id}, {"$set": data}, return_document=True)
-        return result
-    existing = _USERS.get(user_id)
-    if not existing:
-        return None
-    existing.update(data)
-    _USERS[user_id] = existing
-    return existing
-
+    return _service.update_user(user_id, data)
 
 def update_user_by_cognito_id(cognito_id: str, data: dict):
-    db = _db()
-    if db:
-        users = db.collection("users")
-        for k in ("_id", "createdAt"):
-            data.pop(k, None)
-        data["updatedAt"] = None
-        result = users.find_one_and_update({"_id": cognito_id}, {"$set": data}, return_document=True, upsert=True)
-        return result
-    # fallback
-    existing = _USERS.get(cognito_id, {})
-    existing.update(data)
-    _USERS[cognito_id] = existing
-    return existing
+    return _service.update_user_by_cognito_id(cognito_id, data)
