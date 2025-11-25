@@ -37,12 +37,12 @@ def upload_to_s3(buffer, key: str, content_type: str, prefix: str = "") -> str:
         - AWS_ACCESS_KEY_ID: Optional - AWS access key
         - AWS_SECRET_ACCESS_KEY: Optional - AWS secret key
     """
-    bucket = os.environ.get('S3_BUCKET_NAME')
+    bucket = os.environ.get('AWS_S3_BUCKET')
     region = os.environ.get('AWS_REGION', 'ap-southeast-1')
     
     if not bucket:
-        raise ValueError("S3_BUCKET_NAME environment variable not set")
-    
+        raise ValueError("AWS_S3_BUCKET environment variable not set")
+
     s3 = _get_s3_client()
     if not s3:
         raise RuntimeError("Failed to create S3 client")
@@ -58,7 +58,7 @@ def upload_to_s3(buffer, key: str, content_type: str, prefix: str = "") -> str:
             Body=buffer,
             ContentType=content_type,
             # Make it publicly readable (optional)
-            # ACL='public-read'
+            ACL='public-read'
         )
         
         # Return S3 URL
@@ -78,10 +78,10 @@ def delete_from_s3(url_or_key: str) -> bool:
     Returns:
         True if deleted successfully, False otherwise
     """
-    bucket = os.environ.get('S3_BUCKET_NAME')
-    
+    bucket = os.environ.get('AWS_S3_BUCKET')
+
     if not bucket:
-        print("S3_BUCKET_NAME not configured, skipping delete")
+        print("AWS_S3_BUCKET not configured, skipping delete")
         return False
     
     s3 = _get_s3_client()
@@ -121,10 +121,10 @@ def generate_presigned_url(key: str, expiration: int = 3600) -> Optional[str]:
     Returns:
         Presigned URL or None if failed
     """
-    bucket = os.environ.get('S3_BUCKET_NAME')
-    
+    bucket = os.environ.get('AWS_S3_BUCKET')
+
     if not bucket:
-        print("S3_BUCKET_NAME not configured")
+        print("AWS_S3_BUCKET not configured")
         return None
     
     s3 = _get_s3_client()

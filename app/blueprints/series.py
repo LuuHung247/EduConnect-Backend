@@ -56,7 +56,7 @@ def create_serie_route():
         return _error_response(str(e))
 
 
-@bp.route("", methods=["GET"])
+@bp.route("/", methods=["GET"])
 @authenticate_jwt
 def list_series():
     """List all series with optional pagination"""

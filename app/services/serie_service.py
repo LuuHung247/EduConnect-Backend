@@ -261,10 +261,10 @@ class SerieService:
             unique_name = f"{uuid4()}_{getattr(file, 'filename', 'file')}"
             buffer = getattr(file, 'read', lambda: None)()
             mimetype = getattr(file, 'mimetype', None) or getattr(file, 'content_type', None)
-            # image_url = upload_to_s3(
-            #     buffer, unique_name, mimetype,
-            #     f"files/user-{user_id}/thumbnail"
-            # )
+            image_url = upload_to_s3(
+                buffer, unique_name, mimetype,
+                f"files/user-{user_id}/thumbnail"
+            )
         
         data["serie_thumbnail"] = image_url
         data["serie_user"] = user_id
