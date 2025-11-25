@@ -202,7 +202,7 @@ def _build_user_object(token: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     """Build user object from token payload"""
     return {
         'id_token': token,
-        'user_id': payload.get('sub'),
+        'userId': payload.get('sub'),
         'email': payload.get('email'),
         'email_verified': payload.get('email_verified'),
         'username': payload.get('preferred_username') or payload.get('cognito:username') or payload.get('username'),

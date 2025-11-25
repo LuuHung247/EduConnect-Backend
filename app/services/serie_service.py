@@ -111,9 +111,16 @@ class MongoSerieRepository(SerieRepository):
     def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
         serie_col = self._series_collection()
         
+        # Convert isPublish thành boolean
+        is_publish_val = data.get("isPublish", False)
+        if isinstance(is_publish_val, str):
+            is_publish_val = is_publish_val.lower() == "true"
+        else:
+            is_publish_val = bool(is_publish_val)
+        
         new_serie = {
             **data,
-            "isPublish": data.get("isPublish", False),
+            "isPublish": is_publish_val,
             "serie_lessons": data.get("serie_lessons", []),
             "createdAt": None,
             "updatedAt": None,
@@ -131,6 +138,7 @@ class MongoSerieRepository(SerieRepository):
         )
         
         return {"_id": inserted_id, **new_serie, "serie_sns": topic_arn}
+
     
     def update(self, serie_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         from bson import ObjectId
@@ -253,10 +261,10 @@ class SerieService:
             unique_name = f"{uuid4()}_{getattr(file, 'filename', 'file')}"
             buffer = getattr(file, 'read', lambda: None)()
             mimetype = getattr(file, 'mimetype', None) or getattr(file, 'content_type', None)
-            image_url = upload_to_s3(
-                buffer, unique_name, mimetype,
-                f"files/user-{user_id}/thumbnail"
-            )
+            # image_url = upload_to_s3(
+            #     buffer, unique_name, mimetype,
+            #     f"files/user-{user_id}/thumbnail"
+            # )
         
         data["serie_thumbnail"] = image_url
         data["serie_user"] = user_id

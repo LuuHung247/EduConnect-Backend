@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify, g, Response
 from app.middleware.auth import authenticate_jwt
 from app.services.serie_service import (
     create_serie,
@@ -12,25 +12,33 @@ from app.services.serie_service import (
     get_series_subscribed_by_user,
     get_all_series_by_user,
 )
-
+import json
+from app.utils.json_encoder import JSONEncoder
 # API Version 1
 bp = Blueprint("series", __name__, url_prefix="/api/v1/series")
 
 
 def _success_response(data, message=None, status=200):
-    """Helper: Create success response"""
-    response = {"success": True, "data": data}
-    if message:
-        response["message"] = message
-    return jsonify(response), status
+    payload = data
+    
+    return Response(
+        json.dumps(payload, cls=JSONEncoder),
+        mimetype="application/json",
+        status=status
+    )
+
 
 
 def _error_response(message, status=500):
     """Helper: Create error response"""
-    return jsonify({"success": False, "message": message}), status
+    return Response(
+        json.dumps({"success": False, "message": message}),
+        mimetype="application/json",
+        status=status
+    )
 
 
-@bp.route("/", methods=["POST"])
+@bp.route("", methods=["POST"])
 @authenticate_jwt
 def create_serie_route():
     """Create a new series"""
@@ -48,7 +56,7 @@ def create_serie_route():
         return _error_response(str(e))
 
 
-@bp.route("/", methods=["GET"])
+@bp.route("", methods=["GET"])
 @authenticate_jwt
 def list_series():
     """List all series with optional pagination"""
