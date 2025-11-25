@@ -2,7 +2,6 @@ from flask import Blueprint, request, jsonify, g
 from app.services.user_service import (
     create_user,
     get_user_by_id,
-    get_user_by_cognito_id,
     update_user,
 )
 from app.middleware.auth import authenticate_jwt
@@ -29,13 +28,13 @@ def create_profile():
     """Create user profile"""
     try:
         user_data = request.get_json() or {}
-        cognito_id = user_data.get("userId")
-        
-        if not cognito_id:
+        user_id = user_data.get("userId")
+
+        if not user_id:
             return _error_response("userId is required", 400)
         
         # Check if user already exists
-        existing = get_user_by_cognito_id(cognito_id)
+        existing = get_user_by_id(user_id)
         if existing:
             return _error_response("User profile already exists", 409)
         
@@ -51,13 +50,13 @@ def create_profile():
 def get_current_profile():
     """Get current authenticated user's profile"""
     try:
-        cognito_user_id = g.user.get("userId")
-        user = get_user_by_cognito_id(cognito_user_id)
+        user_id = g.user.get("userId")
+        user = get_user_by_id(user_id)
         
         # Auto-create profile if not exists
         if not user:
             user_data = {
-                "cognitoUserId": cognito_user_id,
+                "userId": user_id,
                 "name": g.user.get("name"),
                 "email": g.user.get("email"),
                 "username": g.user.get("username"),

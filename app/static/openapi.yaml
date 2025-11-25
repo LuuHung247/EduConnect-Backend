@@ -445,10 +445,10 @@ paths:
                 serie_description:
                   type: string
                   example: "Learn Python from scratch"
-                serie_thumbnail:
-                  type: string
-                  format: binary
-                  description: Thumbnail image file
+                # serie_thumbnail:
+                #   type: string
+                #   format: binary
+                #   description: Thumbnail image file
                 isPublish:
                   type: boolean
                   default: false

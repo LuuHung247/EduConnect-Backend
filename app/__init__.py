@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 from pathlib import Path
 import json
 from dotenv import load_dotenv
@@ -16,7 +17,7 @@ except Exception:
 def create_app(config_object=None):
     """Application factory for the Flask app."""
     app = Flask(__name__, static_folder=None)
-
+    CORS(app)
     if config_object:
         app.config.from_object(config_object)
 

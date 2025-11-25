@@ -33,9 +33,9 @@ class MongoUserRepository(UserRepository):
         return collection.find_one({"_id": user_id})
     
     def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        cognito_id = data.get("cognitoUserId")
+        cognito_id = data.get("userId") 
         if not cognito_id:
-            raise ValueError("cognitoUserId is required")
+            raise ValueError("userId is required")
 
         collection = self._users_collection()
 
@@ -47,7 +47,7 @@ class MongoUserRepository(UserRepository):
         # Create new
         payload = {
             "_id": cognito_id,
-            **{k: v for k, v in data.items() if k != "cognitoUserId"},
+            **{k: v for k, v in data.items() if k != "userId"},
             "serie_subscribe": [],
             "createdAt": None,
             "updatedAt": None,
@@ -56,10 +56,10 @@ class MongoUserRepository(UserRepository):
         return payload
     
     def update(self, user_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        collection = self._get_collection()
+        collection = self._users_collection()
         
         # Sanitize data
-        update_data = {k: v for k, v in data.items() if k not in ("_id", "cognitoUserId", "createdAt")}
+        update_data = {k: v for k, v in data.items() if k not in ("_id", "userId", "createdAt")}
         update_data["updatedAt"] = None
         
         return collection.find_one_and_update(
