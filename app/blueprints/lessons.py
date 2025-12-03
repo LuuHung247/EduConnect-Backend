@@ -9,7 +9,7 @@ from app.services.lesson_service import (
     delete_document_by_url,
 )
 import json
-from app.utils.json_encoder import JSONEncoder
+from app.utils.json_encoder import JSONEncoder, serialize_doc
 # API Version 1
 bp = Blueprint("lessons", __name__, url_prefix="/api/v1/series/<series_id>/lessons")
 

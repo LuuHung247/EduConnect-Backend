@@ -13,7 +13,7 @@ from app.services.serie_service import (
     get_all_series_by_user,
 )
 import json
-from app.utils.json_encoder import JSONEncoder
+from app.utils.json_encoder import JSONEncoder, serialize_doc
 # API Version 1
 bp = Blueprint("series", __name__, url_prefix="/api/v1/series")
 
