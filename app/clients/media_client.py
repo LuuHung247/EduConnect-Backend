@@ -2,11 +2,12 @@ import requests
 import os
 from typing import List, Optional, Dict
 
+
 class MediaServiceClient:
     """Client to communicate with Media Storage Microservice"""
     
     def __init__(self):
-        self.base_url = os.environ.get('MEDIA_SERVICE_URL', 'http://localhost:5002')
+        self.base_url = os.environ.get('MEDIA_SERVICE_URL', 'http://localhost:8001')
         self.timeout = 300  # 5 minutes for large files
     
     def _make_request(self, method: str, endpoint: str, **kwargs):
@@ -23,11 +24,9 @@ class MediaServiceClient:
     def upload_thumbnail(self, file, user_id: str) -> Optional[str]:
         """Upload thumbnail image"""
         try:
-            # Reset file pointer if possible
             if hasattr(file, 'seek'):
                 file.seek(0)
             
-            # Read file content
             file_content = file.read() if hasattr(file, 'read') else file
             filename = getattr(file, 'filename', 'thumbnail.jpg')
             content_type = getattr(file, 'content_type', None) or getattr(file, 'mimetype', 'image/jpeg')
@@ -48,20 +47,35 @@ class MediaServiceClient:
             print(f"Error uploading thumbnail: {e}")
             return None
     
-    def upload_video(self, file, user_id: str) -> Optional[str]:
-        """Upload video file"""
+    def upload_video(
+        self, 
+        file, 
+        user_id: str,
+        lesson_id: Optional[str] = None,
+        series_id: Optional[str] = None,
+        create_transcript: bool = True
+    ) -> Optional[Dict[str, str]]:
+        """
+        Upload video file với option tạo transcript
+        
+        Returns:
+            Dict với url, key, transcript_status
+        """
         try:
-            # Reset file pointer if possible
             if hasattr(file, 'seek'):
                 file.seek(0)
             
-            # Read file content
             file_content = file.read() if hasattr(file, 'read') else file
             filename = getattr(file, 'filename', 'video.mp4')
             content_type = getattr(file, 'content_type', None) or getattr(file, 'mimetype', 'video/mp4')
             
             files = {'file': (filename, file_content, content_type)}
-            data = {'user_id': user_id}
+            data = {
+                'user_id': user_id,
+                'create_transcript': 'true' if create_transcript else 'false',
+                'lesson_id': lesson_id or '',
+                'series_id': series_id or ''
+            }
             
             result = self._make_request(
                 'POST',
@@ -71,7 +85,12 @@ class MediaServiceClient:
                 timeout=self.timeout
             )
             
-            return result.get('url')
+            # Return full result dict thay vì chỉ url
+            return {
+                "url": result.get('url'),
+                "key": result.get('key'),
+                "transcript_status": result.get('transcript_status', 'disabled')
+            }
         except Exception as e:
             print(f"Error uploading video: {e}")
             return None
@@ -79,11 +98,9 @@ class MediaServiceClient:
     def upload_document(self, file, user_id: str) -> Optional[str]:
         """Upload document file"""
         try:
-            # Reset file pointer if possible
             if hasattr(file, 'seek'):
                 file.seek(0)
             
-            # Read file content
             file_content = file.read() if hasattr(file, 'read') else file
             filename = getattr(file, 'filename', 'document.pdf')
             content_type = getattr(file, 'content_type', None) or getattr(file, 'mimetype', 'application/pdf')
@@ -109,11 +126,9 @@ class MediaServiceClient:
         try:
             file_tuples = []
             for f in files:
-                # Reset file pointer if possible
                 if hasattr(f, 'seek'):
                     f.seek(0)
                 
-                # Read file content
                 file_content = f.read() if hasattr(f, 'read') else f
                 filename = getattr(f, 'filename', 'document.pdf')
                 content_type = getattr(f, 'content_type', None) or getattr(f, 'mimetype', 'application/pdf')

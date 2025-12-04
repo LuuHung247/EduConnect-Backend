@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
 from app.utils.mongodb import get_db
-
+from datetime import datetime, timezone
 
 # 1. Interface Repository
 class UserRepository(ABC):
@@ -48,8 +48,8 @@ class MongoUserRepository(UserRepository):
             "_id": cognito_id,
             **{k: v for k, v in data.items() if k != "userId"},
             "serie_subscribe": [],
-            "createdAt": None,
-            "updatedAt": None,
+            "createdAt": datetime.now(timezone.utc),
+            "updatedAt": datetime.now(timezone.utc)
         }
         collection.insert_one(payload)
         return payload
@@ -59,8 +59,8 @@ class MongoUserRepository(UserRepository):
         
         # Sanitize data
         update_data = {k: v for k, v in data.items() if k not in ("_id", "userId", "createdAt")}
-        update_data["updatedAt"] = None
-        
+        update_data["updatedAt"] = datetime.now(timezone.utc)
+
         return collection.find_one_and_update(
             {"_id": user_id},
             {"$set": update_data},

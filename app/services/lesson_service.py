@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, List
+from datetime import datetime, timezone
 from app.utils.mongodb import get_db
 from app.utils.sns import publish_to_topic
 from app.clients.media_client import MediaServiceClient
@@ -31,6 +32,10 @@ class LessonRepository(ABC):
     
     @abstractmethod
     def delete_document(self, lesson_id: str, series_id: str, doc_url: str) -> bool:
+        pass
+    
+    @abstractmethod
+    def delete_transcript(self, lesson_id: str, series_id: str) -> bool:
         pass
 
 
@@ -64,21 +69,19 @@ class MongoLessonRepository(LessonRepository):
         
         new_lesson = {
             **data,
-            "createdAt": None,
-            "updatedAt": None
+            "createdAt": datetime.now(timezone.utc),
+            "updatedAt": datetime.now(timezone.utc)
         }
         
         result = lesson_col.insert_one(new_lesson)
         lesson_id = result.inserted_id
         
-        # Push lesson id to series
         from bson import ObjectId
         series_col.update_one(
             {"_id": ObjectId(data.get("lesson_serie"))},
             {"$push": {"serie_lessons": lesson_id}}
         )
         
-        # Get serie for SNS notification
         serie = series_col.find_one({"_id": ObjectId(data.get("lesson_serie"))})
         
         if serie and serie.get("serie_sns"):
@@ -99,7 +102,7 @@ class MongoLessonRepository(LessonRepository):
         from bson import ObjectId
         lesson_col = self._lessons_collection()
         
-        data["updatedAt"] = None
+        data["updatedAt"] = datetime.now(timezone.utc)
         
         res = lesson_col.update_one(
             {"_id": ObjectId(lesson_id), "lesson_serie": series_id},
@@ -130,7 +133,6 @@ class MongoLessonRepository(LessonRepository):
         })
         
         if result.deleted_count > 0:
-            # Remove from series
             series_col.update_one(
                 {"_id": ObjectId(series_id)},
                 {"$pull": {"serie_lessons": ObjectId(lesson_id)}}
@@ -154,11 +156,32 @@ class MongoLessonRepository(LessonRepository):
         if doc_url not in docs:
             raise ValueError("Document URL không tồn tại trong lesson.")
 
-        # Update lesson (remove document from list)
         updated_docs = [d for d in docs if d != doc_url]
         lesson_col.update_one(
             {"_id": ObjectId(lesson_id), "lesson_serie": series_id},
-            {"$set": {"lesson_documents": updated_docs, "updatedAt": None}}
+            {"$set": {"lesson_documents": updated_docs, "updatedAt": datetime.now(timezone.utc)}}
+        )
+        
+        return True
+    
+    def delete_transcript(self, lesson_id: str, series_id: str) -> bool:
+        from bson import ObjectId
+        lesson_col = self._lessons_collection()
+        
+        lesson = lesson_col.find_one({
+            "_id": ObjectId(lesson_id),
+            "lesson_serie": series_id
+        })
+        
+        if not lesson:
+            raise ValueError("Lesson không tồn tại.")
+        
+        if not lesson.get("lesson_transcript"):
+            raise ValueError("Transcript không tồn tại trong lesson.")
+        
+        lesson_col.update_one(
+            {"_id": ObjectId(lesson_id), "lesson_serie": series_id},
+            {"$set": {"lesson_transcript": "", "transcript_status": None, "updatedAt": datetime.now(timezone.utc)}}
         )
         
         return True
@@ -176,30 +199,18 @@ class LessonService:
         self._repository = repository or MongoLessonRepository()
         self._media_client = media_client or MediaServiceClient()
     
-    def _process_files(self, files, user_id: str) -> tuple[str, List[str]]:
-        """Process video and document files using Media Service"""
-        video_url = ""
+    def _process_documents(self, files, user_id: str) -> List[str]:
+        """Process document files only"""
         document_urls = []
         
         if not files:
-            return video_url, document_urls
+            return document_urls
         
-        # Process video
-        video = files.get("lesson_video") if hasattr(files, 'get') else None
-        if video:
-            video_file = video[0] if isinstance(video, (list, tuple)) else video
-            video_url = self._media_client.upload_video(video_file, user_id)
-            if not video_url:
-                print("Warning: Failed to upload video")
-                video_url = ""
-        
-        # Process documents
-        docs = files.get("lesson_documents") if hasattr(files, 'get') else None
+        docs = files.getlist("lesson_documents") if hasattr(files, 'getlist') else None
         if docs:
-            doc_files = docs if isinstance(docs, (list, tuple)) else [docs]
-            document_urls = self._media_client.upload_documents_batch(doc_files, user_id)
+            document_urls = self._media_client.upload_documents_batch(docs, user_id)
         
-        return video_url, document_urls
+        return document_urls
     
     def create_lesson(
         self,
@@ -208,13 +219,54 @@ class LessonService:
         id_token: str = None,
         files=None
     ) -> Dict[str, Any]:
-        # Upload media files qua Media Service
-        video_url, document_urls = self._process_files(files, user_id)
+        """
+        Create lesson với flow:
+        1. Upload documents (sync)
+        2. Create lesson trong DB (để có lesson_id)
+        3. Upload video qua Media Service (transcript chạy background ở đó)
+        4. Update lesson với video URL
+        5. Return response ngay
+        """
+        # Step 1: Upload documents
+        document_urls = self._process_documents(files, user_id)
         
-        data["lesson_video"] = video_url
+        # Prepare lesson data (chưa có video/transcript)
+        data["lesson_video"] = ""
+        data["lesson_transcript"] = ""
+        data["transcript_status"] = "pending"
         data["lesson_documents"] = document_urls
         
-        return self._repository.create(data)
+        # Step 2: Create lesson để có lesson_id
+        created_lesson = self._repository.create(data)
+        lesson_id = created_lesson["_id"]
+        series_id = data.get("lesson_serie")
+        
+        # Step 3: Upload video qua Media Service
+        if files:
+            video_list = files.getlist("lesson_video") if hasattr(files, 'getlist') else None
+            if video_list and len(video_list) > 0:
+                video_file = video_list[0]
+                
+                # Gọi Media Service với lesson_id, series_id
+                # Media Service sẽ chạy background task và update DB sau
+                video_result = self._media_client.upload_video(
+                    file=video_file,
+                    user_id=user_id,
+                    lesson_id=lesson_id,
+                    series_id=series_id,
+                    create_transcript=True
+                )
+                
+                # Step 4: Update lesson với video URL ngay
+                if video_result and video_result.get("url"):
+                    self._repository.update(lesson_id, series_id, {
+                        "lesson_video": video_result["url"],
+                        "transcript_status": video_result.get("transcript_status", "processing")
+                    })
+                    created_lesson["lesson_video"] = video_result["url"]
+                    created_lesson["transcript_status"] = video_result.get("transcript_status", "processing")
+        
+        return created_lesson
     
     def get_all_lessons_by_serie(self, series_id: str) -> List[Dict[str, Any]]:
         return self._repository.find_by_serie(series_id)
@@ -231,56 +283,67 @@ class LessonService:
         id_token: str = None,
         files=None
     ) -> Optional[Dict[str, Any]]:
-        # Get current lesson to handle file deletions
         current = self._repository.find_by_id(lesson_id, series_id)
         if not current:
             return None
         
-        # Handle video replacement qua Media Service
-        if files and files.get("lesson_video"):
-            video_file = files.get("lesson_video")
-            if isinstance(video_file, (list, tuple)):
-                video_file = video_file[0]
-            
-            # Delete old video
-            old_video = current.get("lesson_video")
-            if old_video:
-                self._media_client.delete_file(old_video)
-            
-            # Upload new video
-            new_video_url = self._media_client.upload_video(video_file, user_id)
-            if new_video_url:
-                data["lesson_video"] = new_video_url
+        # Handle video replacement
+        if files:
+            video_list = files.getlist("lesson_video") if hasattr(files, 'getlist') else None
+            if video_list and len(video_list) > 0:
+                video_file = video_list[0]
+                
+                # Delete old video & transcript
+                old_video = current.get("lesson_video")
+                if old_video:
+                    self._media_client.delete_file(old_video)
+                
+                old_transcript = current.get("lesson_transcript")
+                if old_transcript:
+                    self._media_client.delete_file(old_transcript)
+                
+                # Upload new video
+                video_result = self._media_client.upload_video(
+                    file=video_file,
+                    user_id=user_id,
+                    lesson_id=lesson_id,
+                    series_id=series_id,
+                    create_transcript=True
+                )
+                
+                if video_result and video_result.get("url"):
+                    data["lesson_video"] = video_result["url"]
+                    data["lesson_transcript"] = ""
+                    data["transcript_status"] = video_result.get("transcript_status", "processing")
         
-        # Handle documents replacement qua Media Service
-        if files and files.get("lesson_documents"):
-            doc_files = files.get("lesson_documents")
-            
-            # Delete old documents
-            old_docs = current.get("lesson_documents", [])
-            if old_docs:
-                self._media_client.delete_files_batch(old_docs)
-            
-            # Upload new documents
-            new_doc_urls = self._media_client.upload_documents_batch(doc_files, user_id)
-            if new_doc_urls:
-                data["lesson_documents"] = new_doc_urls
+        # Handle documents replacement
+        if files:
+            doc_list = files.getlist("lesson_documents") if hasattr(files, 'getlist') else None
+            if doc_list and len(doc_list) > 0:
+                # Delete old documents
+                old_docs = current.get("lesson_documents", [])
+                if old_docs:
+                    self._media_client.delete_files_batch(old_docs)
+                
+                # Upload new documents
+                new_doc_urls = self._media_client.upload_documents_batch(doc_list, user_id)
+                if new_doc_urls:
+                    data["lesson_documents"] = new_doc_urls
         
         return self._repository.update(lesson_id, series_id, data)
     
     def delete_lesson(self, series_id: str, lesson_id: str) -> bool:
-        # Get lesson to delete media files
         lesson = self._repository.find_by_id(lesson_id, series_id)
         
-        # Delete from repository first
         result = self._repository.delete(lesson_id, series_id)
         
         if result and lesson:
-            # Delete video qua Media Service
             if lesson.get("lesson_video"):
                 self._media_client.delete_file(lesson.get("lesson_video"))
             
-            # Delete documents qua Media Service
+            if lesson.get("lesson_transcript"):
+                self._media_client.delete_file(lesson.get("lesson_transcript"))
+            
             docs = lesson.get("lesson_documents")
             if docs:
                 if isinstance(docs, list):
@@ -291,17 +354,29 @@ class LessonService:
         return result
     
     def delete_document_by_url(self, series_id: str, lesson_id: str, doc_url: str) -> bool:
-        # First update the repository (remove from DB)
         result = self._repository.delete_document(lesson_id, series_id, doc_url)
         
-        # Then delete from storage qua Media Service
         if result:
             self._media_client.delete_file(doc_url)
         
         return result
+    
+    def delete_transcript(self, series_id: str, lesson_id: str) -> bool:
+        lesson = self._repository.find_by_id(lesson_id, series_id)
+        if not lesson:
+            raise ValueError("Lesson không tồn tại.")
+        
+        transcript_url = lesson.get("lesson_transcript")
+        
+        result = self._repository.delete_transcript(lesson_id, series_id)
+        
+        if result and transcript_url:
+            self._media_client.delete_file(transcript_url)
+        
+        return result
 
 
-# Public API - backward compatibility
+# Public API
 _service = LessonService()
 
 def create_lesson(data, user_id=None, id_token=None, files=None):
@@ -321,3 +396,6 @@ def delete_lesson(series_id, lesson_id):
 
 def delete_document_by_url(series_id, lesson_id, doc_url):
     return _service.delete_document_by_url(series_id, lesson_id, doc_url)
+
+def delete_transcript(series_id, lesson_id):
+    return _service.delete_transcript(series_id, lesson_id)

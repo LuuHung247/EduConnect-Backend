@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any, List
 from app.utils.mongodb import get_db
 from app.utils.sns import create_topic, delete_topic, subscribe_to_serie, unsubscribe_from_topic
 from app.clients.media_client import MediaServiceClient
+from datetime import datetime, timezone
 
 
 # 1. Interface Repository
@@ -120,8 +121,8 @@ class MongoSerieRepository(SerieRepository):
             **data,
             "isPublish": is_publish_val,
             "serie_lessons": data.get("serie_lessons", []),
-            "createdAt": None,
-            "updatedAt": None,
+            "createdAt": datetime.now(timezone.utc),
+            "updatedAt": datetime.now(timezone.utc),
             "serie_subcribe_num": 0,
         }
         
@@ -145,7 +146,7 @@ class MongoSerieRepository(SerieRepository):
         if isinstance(data.get("isPublish"), str):
             data["isPublish"] = data["isPublish"].lower() == "true"
         
-        data["updatedAt"] = None
+        data["updatedAt"] = datetime.now(timezone.utc)
         
         res = serie_col.update_one(
             {"_id": ObjectId(serie_id)},
@@ -172,7 +173,7 @@ class MongoSerieRepository(SerieRepository):
         # Remove from users' subscriptions
         user_col.update_many(
             {"serie_subcribe": serie_id},
-            {"$pull": {"serie_subcribe": serie_id}, "$set": {"updatedAt": None}}
+            {"$pull": {"serie_subcribe": serie_id}, "$set": {"updatedAt": datetime.now(timezone.utc)}}
         )
         
         # Delete SNS topic
@@ -201,12 +202,12 @@ class MongoSerieRepository(SerieRepository):
         
         user_col.update_one(
             {"_id": user_id},
-            {"$addToSet": {"serie_subcribe": serie_id}, "$set": {"updatedAt": None}}
+            {"$addToSet": {"serie_subcribe": serie_id}, "$set": {"updatedAt": datetime.now(timezone.utc)}}
         )
         
         serie_col.update_one(
             {"_id": ObjectId(serie_id)},
-            {"$inc": {"serie_subcribe_num": 1}, "$set": {"updatedAt": None}}
+            {"$inc": {"serie_subcribe_num": 1}, "$set": {"updatedAt": datetime.now(timezone.utc)}}
         )
         
         return {"message": "Subscribed"}
@@ -229,15 +230,15 @@ class MongoSerieRepository(SerieRepository):
         
         user_col.update_one(
             {"_id": user_id},
-            {"$pull": {"serie_subcribe": serie_id}, "$set": {"updatedAt": None}}
+            {"$pull": {"serie_subcribe": serie_id}, "$set": {"updatedAt": datetime.now(timezone.utc)}}
         )
         
         serie_col.update_one(
             {"_id": ObjectId(serie_id)},
-            {"$inc": {"serie_subcribe_num": -1}, "$set": {"updatedAt": None}}
+            {"$inc": {"serie_subcribe_num": -1}, "$set": {"updatedAt": datetime.now(timezone.utc)}}
         )
         
-        return {"message": "Bạn đã hủy đăng ký thành công.", "user": None}
+        return {"message": "Bạn đã hủy đăng ký thành công."}
 
 
 # 3. Service
