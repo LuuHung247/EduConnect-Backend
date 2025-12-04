@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, g, Response
+from flask import Blueprint, request, g, Response
 from app.middleware.auth import authenticate_jwt
 from app.services.serie_service import (
     create_serie,
@@ -13,24 +13,26 @@ from app.services.serie_service import (
     get_all_series_by_user,
 )
 import json
-from app.utils.json_encoder import JSONEncoder, serialize_doc
-# API Version 1
+from app.utils.json_encoder import JSONEncoder
+from app.utils.cache import (
+    cached_public,
+    cached_with_user,
+    invalidate_series_cache,
+    invalidate_user_cache,
+)
+
 bp = Blueprint("series", __name__, url_prefix="/api/v1/series")
 
 
 def _success_response(data, message=None, status=200):
-    payload = data
-    
     return Response(
-        json.dumps(payload, cls=JSONEncoder),
+        json.dumps(data, cls=JSONEncoder),
         mimetype="application/json",
         status=status
     )
 
 
-
 def _error_response(message, status=500):
-    """Helper: Create error response"""
     return Response(
         json.dumps({"success": False, "message": message}),
         mimetype="application/json",
@@ -50,6 +52,11 @@ def create_serie_route():
         id_token = g.user.get("idToken")
         
         result = create_serie(data, user_id, id_token, file)
+        
+        # Invalidate cache
+        invalidate_series_cache()
+        invalidate_user_cache(user_id)  # User's created series changed
+        
         return _success_response(result, "Series created successfully", 201)
     
     except Exception as e:
@@ -58,6 +65,7 @@ def create_serie_route():
 
 @bp.route("/", methods=["GET"])
 @authenticate_jwt
+@cached_public(timeout=300)  # Cache 5 phút, public (ETag included)
 def list_series():
     """List all series with optional pagination"""
     try:
@@ -71,6 +79,7 @@ def list_series():
 
 @bp.route("/subscribed", methods=["GET"])
 @authenticate_jwt
+@cached_with_user(timeout=120)  # Cache 2 phút, per user (ETag included)
 def get_user_subscribed_series():
     """Get series subscribed by current user"""
     try:
@@ -84,6 +93,7 @@ def get_user_subscribed_series():
 
 @bp.route("/created", methods=["GET"])
 @authenticate_jwt
+@cached_with_user(timeout=120)  # Cache 2 phút, per user (ETag included)
 def get_user_created_series():
     """Get series created by current user"""
     try:
@@ -96,6 +106,7 @@ def get_user_created_series():
 
 
 @bp.route("/search", methods=["GET"])
+@cached_public(timeout=60)  # Cache 1 phút (ETag included)
 def search_series():
     """Search series by keyword"""
     try:
@@ -112,6 +123,7 @@ def search_series():
 
 
 @bp.route("/<serie_id>", methods=["GET"])
+@cached_public(timeout=300)  # Cache 5 phút (ETag included)
 def get_serie_detail(serie_id):
     """Get series details by ID"""
     try:
@@ -142,6 +154,9 @@ def update_serie_route(serie_id):
         if not updated:
             return _error_response("Serie not found", 404)
         
+        # Invalidate cache
+        invalidate_series_cache(serie_id)
+        
         return _success_response(updated, "Series updated successfully")
     
     except Exception as e:
@@ -160,6 +175,11 @@ def subscribe_to_serie(serie_id):
             return _error_response("Thiếu thông tin người dùng", 400)
         
         result = subscribe_serie(serie_id, user_id, user_email)
+        
+        # Invalidate caches
+        invalidate_series_cache(serie_id)
+        invalidate_user_cache(user_id)  # User's subscribed list changed
+        
         return _success_response(result)
     
     except ValueError as e:
@@ -180,6 +200,11 @@ def unsubscribe_from_serie(serie_id):
             return _error_response("Thiếu thông tin người dùng", 400)
         
         result = unsubscribe_serie(serie_id, user_id, user_email)
+        
+        # Invalidate caches
+        invalidate_series_cache(serie_id)
+        invalidate_user_cache(user_id)  # User's subscribed list changed
+        
         return _success_response(result)
     
     except ValueError as e:
@@ -193,10 +218,15 @@ def unsubscribe_from_serie(serie_id):
 def delete_serie_route(serie_id):
     """Delete a series"""
     try:
+        user_id = g.user.get("userId")
         result = delete_serie(serie_id)
         
         if not result.get("success"):
             return _error_response(result.get("warning"), 400)
+        
+        # Invalidate caches
+        invalidate_series_cache(serie_id)
+        invalidate_user_cache(user_id)  # User's created series changed
         
         return _success_response(None, "Serie deleted successfully")
     

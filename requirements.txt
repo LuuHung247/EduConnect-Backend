@@ -7,3 +7,5 @@ PyJWT
 requests
 flask-swagger-ui
 pytest
+redis
+flask-caching
