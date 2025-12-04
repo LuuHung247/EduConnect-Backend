@@ -7,3 +7,10 @@ PyJWT
 requests
 flask-swagger-ui
 pytest
+fastapi
+uvicorn
+motor
+pydantic-settings
+httpx
+python-multipart
+cryptography
