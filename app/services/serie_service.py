@@ -1,9 +1,8 @@
 from abc import ABC, abstractmethod
-from uuid import uuid4
 from typing import Optional, Dict, Any, List
 from app.utils.mongodb import get_db
-from app.utils.s3 import upload_to_s3, delete_from_s3
 from app.utils.sns import create_topic, delete_topic, subscribe_to_serie, unsubscribe_from_topic
+from app.clients.media_client import MediaServiceClient
 
 
 # 1. Interface Repository
@@ -54,7 +53,6 @@ class SerieRepository(ABC):
 # 2. Implementation: MongoDB
 class MongoSerieRepository(SerieRepository):
     """MongoDB implementation"""
-    
     
     def _series_collection(self):
         _, db = get_db()
@@ -139,7 +137,6 @@ class MongoSerieRepository(SerieRepository):
         
         return {"_id": inserted_id, **new_serie, "serie_sns": topic_arn}
 
-    
     def update(self, serie_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         from bson import ObjectId
         serie_col = self._series_collection()
@@ -183,10 +180,6 @@ class MongoSerieRepository(SerieRepository):
             delete_topic(serie.get("serie_sns"))
         
         result = serie_col.delete_one({"_id": ObjectId(serie_id)})
-        
-        # Delete thumbnail
-        if result.deleted_count > 0 and serie.get("serie_thumbnail"):
-            delete_from_s3(serie.get("serie_thumbnail"))
         
         return result.deleted_count > 0
     
@@ -249,24 +242,23 @@ class MongoSerieRepository(SerieRepository):
 
 # 3. Service
 class SerieService:
-    """Service quản lý serie"""
+    """Service quản lý serie - Gọi Media Service qua HTTP"""
     
-    def __init__(self, repository: Optional[SerieRepository] = None):
+    def __init__(
+        self, 
+        repository: Optional[SerieRepository] = None,
+        media_client: Optional[MediaServiceClient] = None
+    ):
         self._repository = repository or MongoSerieRepository()
+        self._media_client = media_client or MediaServiceClient()
     
     def create_serie(self, data: Dict, user_id: str, id_token: str = None, file=None) -> Dict[str, Any]:
-        image_url = ""
-        
+        # Upload thumbnail qua Media Service
+        thumbnail_url = ""
         if file:
-            unique_name = f"{uuid4()}_{getattr(file, 'filename', 'file')}"
-            buffer = getattr(file, 'read', lambda: None)()
-            mimetype = getattr(file, 'mimetype', None) or getattr(file, 'content_type', None)
-            image_url = upload_to_s3(
-                buffer, unique_name, mimetype,
-                f"files/user-{user_id}/thumbnail"
-            )
+            thumbnail_url = self._media_client.upload_thumbnail(file, user_id)
         
-        data["serie_thumbnail"] = image_url
+        data["serie_thumbnail"] = thumbnail_url
         data["serie_user"] = user_id
         
         return self._repository.create(data)
@@ -286,21 +278,24 @@ class SerieService:
     def get_series_subscribed_by_user(self, user_id: str) -> List[Dict[str, Any]]:
         return self._repository.find_subscribed_by_user(user_id)
     
-    def update_serie(self, serie_id: str, data: Dict, user_id: str = None, id_token: str = None, file=None) -> Optional[Dict[str, Any]]:
+    def update_serie(
+        self, 
+        serie_id: str, 
+        data: Dict, 
+        user_id: str = None, 
+        id_token: str = None, 
+        file=None
+    ) -> Optional[Dict[str, Any]]:
+        # Handle thumbnail replacement qua Media Service
         if file:
-            # Delete old thumbnail
             current = self._repository.find_by_id(serie_id)
+            
+            # Delete old thumbnail
             if current and current.get("serie_thumbnail"):
-                delete_from_s3(current.get("serie_thumbnail"))
-
-            # Upload new
-            unique_name = f"{uuid4()}_{getattr(file, 'filename', 'file')}"
-            buffer = getattr(file, 'read', lambda: None)()
-            mimetype = getattr(file, 'mimetype', None) or getattr(file, 'content_type', None)
-            new_url = upload_to_s3(
-                buffer, unique_name, mimetype,
-                f"files/user-{user_id}/thumbnail"
-            )
+                self._media_client.delete_file(current.get("serie_thumbnail"))
+            
+            # Upload new thumbnail
+            new_url = self._media_client.upload_thumbnail(file, user_id)
             data["serie_thumbnail"] = new_url
         
         return self._repository.update(serie_id, data)
@@ -326,6 +321,9 @@ class SerieService:
         return self._repository.unsubscribe_user(serie_id, user_id)
     
     def delete_serie(self, serie_id: str) -> Dict[str, Any]:
+        # Get serie to delete thumbnail
+        serie = self._repository.find_by_id(serie_id)
+        
         result = self._repository.delete(serie_id)
         
         if result is False:
@@ -333,6 +331,10 @@ class SerieService:
                 "success": False,
                 "warning": "Không thể xóa serie khi vẫn còn bài học trong serie này."
             }
+        
+        # Delete thumbnail qua Media Service
+        if result and serie and serie.get("serie_thumbnail"):
+            self._media_client.delete_file(serie.get("serie_thumbnail"))
         
         return {"success": result}
 

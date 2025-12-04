@@ -1,9 +1,8 @@
 from abc import ABC, abstractmethod
-from uuid import uuid4
 from typing import Optional, Dict, Any, List
 from app.utils.mongodb import get_db
-from app.utils.s3 import  upload_to_s3, delete_from_s3
 from app.utils.sns import publish_to_topic
+from app.clients.media_client import MediaServiceClient
 
 
 # 1. Interface Repository
@@ -46,7 +45,6 @@ class MongoLessonRepository(LessonRepository):
     def _series_collection(self):
         _, db = get_db()
         return db["series"]
-
     
     def find_by_id(self, lesson_id: str, series_id: str) -> Optional[Dict[str, Any]]:
         from bson import ObjectId
@@ -137,17 +135,6 @@ class MongoLessonRepository(LessonRepository):
                 {"_id": ObjectId(series_id)},
                 {"$pull": {"serie_lessons": ObjectId(lesson_id)}}
             )
-            
-            # Delete video
-            if lesson.get("lesson_video"):
-                delete_from_s3(lesson.get("lesson_video"))
-            
-            # Delete documents
-            if isinstance(lesson.get("lesson_documents"), list):
-                for doc in lesson.get("lesson_documents"):
-                    delete_from_s3(doc)
-            elif lesson.get("lesson_documents"):
-                delete_from_s3(lesson.get("lesson_documents"))
         
         return result.deleted_count > 0
     
@@ -167,10 +154,7 @@ class MongoLessonRepository(LessonRepository):
         if doc_url not in docs:
             raise ValueError("Document URL không tồn tại trong lesson.")
 
-        # Delete file from S3
-        delete_from_s3(doc_url)
-
-        # Update lesson
+        # Update lesson (remove document from list)
         updated_docs = [d for d in docs if d != doc_url]
         lesson_col.update_one(
             {"_id": ObjectId(lesson_id), "lesson_serie": series_id},
@@ -182,13 +166,18 @@ class MongoLessonRepository(LessonRepository):
 
 # 3. Service
 class LessonService:
-    """Service quản lý lesson"""
+    """Service quản lý lesson - Gọi Media Service qua HTTP"""
     
-    def __init__(self, repository: Optional[LessonRepository] = None):
+    def __init__(
+        self, 
+        repository: Optional[LessonRepository] = None,
+        media_client: Optional[MediaServiceClient] = None
+    ):
         self._repository = repository or MongoLessonRepository()
+        self._media_client = media_client or MediaServiceClient()
     
-    def _process_files(self, files, user_id: str, id_token: str) -> tuple[str, List[str]]:
-        """Process video and document files"""
+    def _process_files(self, files, user_id: str) -> tuple[str, List[str]]:
+        """Process video and document files using Media Service"""
         video_url = ""
         document_urls = []
         
@@ -198,28 +187,17 @@ class LessonService:
         # Process video
         video = files.get("lesson_video") if hasattr(files, 'get') else None
         if video:
-            vf = video[0] if isinstance(video, (list, tuple)) else video
-            buffer = vf.read()
-            filename = getattr(vf, 'filename', 'video')
-            mimetype = getattr(vf, 'mimetype', None)
-            video_url = upload_to_s3(
-                buffer, f"{uuid4()}_{filename}",
-                mimetype, f"files/user-{user_id}/videos"
-            )
+            video_file = video[0] if isinstance(video, (list, tuple)) else video
+            video_url = self._media_client.upload_video(video_file, user_id)
+            if not video_url:
+                print("Warning: Failed to upload video")
+                video_url = ""
         
         # Process documents
         docs = files.get("lesson_documents") if hasattr(files, 'get') else None
         if docs:
             doc_files = docs if isinstance(docs, (list, tuple)) else [docs]
-            for doc in doc_files:
-                buf = doc.read()
-                filename = getattr(doc, 'filename', 'doc')
-                mimetype = getattr(doc, 'mimetype', None)
-                doc_url = upload_to_s3(
-                    buf, f"{uuid4()}_{filename}",
-                    mimetype, f"files/user-{user_id}/docs"
-                )
-                document_urls.append(doc_url)
+            document_urls = self._media_client.upload_documents_batch(doc_files, user_id)
         
         return video_url, document_urls
     
@@ -230,7 +208,8 @@ class LessonService:
         id_token: str = None,
         files=None
     ) -> Dict[str, Any]:
-        video_url, document_urls = self._process_files(files, user_id, id_token)
+        # Upload media files qua Media Service
+        video_url, document_urls = self._process_files(files, user_id)
         
         data["lesson_video"] = video_url
         data["lesson_documents"] = document_urls
@@ -257,45 +236,69 @@ class LessonService:
         if not current:
             return None
         
-        # Handle video replacement
+        # Handle video replacement qua Media Service
         if files and files.get("lesson_video"):
-            if current.get("lesson_video"):
-                delete_from_s3(current.get("lesson_video"))
+            video_file = files.get("lesson_video")
+            if isinstance(video_file, (list, tuple)):
+                video_file = video_file[0]
             
-            vf = files.get("lesson_video")[0]
-            buf = vf.read()
-            filename = getattr(vf, 'filename', 'video')
-            mimetype = getattr(vf, 'mimetype', None)
-            data["lesson_video"] = upload_to_s3(
-                buf, f"{uuid4()}_{filename}",
-                mimetype, f"files/user-{user_id}/videos"
-            )
+            # Delete old video
+            old_video = current.get("lesson_video")
+            if old_video:
+                self._media_client.delete_file(old_video)
+            
+            # Upload new video
+            new_video_url = self._media_client.upload_video(video_file, user_id)
+            if new_video_url:
+                data["lesson_video"] = new_video_url
         
-        # Handle documents replacement
+        # Handle documents replacement qua Media Service
         if files and files.get("lesson_documents"):
-            if current.get("lesson_documents"):
-                for doc_url in current.get("lesson_documents"):
-                    delete_from_s3(doc_url)
-
-            doc_urls = []
-            for df in files.get("lesson_documents"):
-                buf = df.read()
-                filename = getattr(df, 'filename', 'doc')
-                mimetype = getattr(df, 'mimetype', None)
-                doc_url = upload_to_s3(
-                    buf, f"{uuid4()}_{filename}",
-                    mimetype, f"files/user-{user_id}/docs"
-                )
-                doc_urls.append(doc_url)
-            data["lesson_documents"] = doc_urls
+            doc_files = files.get("lesson_documents")
+            
+            # Delete old documents
+            old_docs = current.get("lesson_documents", [])
+            if old_docs:
+                self._media_client.delete_files_batch(old_docs)
+            
+            # Upload new documents
+            new_doc_urls = self._media_client.upload_documents_batch(doc_files, user_id)
+            if new_doc_urls:
+                data["lesson_documents"] = new_doc_urls
         
         return self._repository.update(lesson_id, series_id, data)
     
     def delete_lesson(self, series_id: str, lesson_id: str) -> bool:
-        return self._repository.delete(lesson_id, series_id)
+        # Get lesson to delete media files
+        lesson = self._repository.find_by_id(lesson_id, series_id)
+        
+        # Delete from repository first
+        result = self._repository.delete(lesson_id, series_id)
+        
+        if result and lesson:
+            # Delete video qua Media Service
+            if lesson.get("lesson_video"):
+                self._media_client.delete_file(lesson.get("lesson_video"))
+            
+            # Delete documents qua Media Service
+            docs = lesson.get("lesson_documents")
+            if docs:
+                if isinstance(docs, list):
+                    self._media_client.delete_files_batch(docs)
+                else:
+                    self._media_client.delete_file(docs)
+        
+        return result
     
     def delete_document_by_url(self, series_id: str, lesson_id: str, doc_url: str) -> bool:
-        return self._repository.delete_document(lesson_id, series_id, doc_url)
+        # First update the repository (remove from DB)
+        result = self._repository.delete_document(lesson_id, series_id, doc_url)
+        
+        # Then delete from storage qua Media Service
+        if result:
+            self._media_client.delete_file(doc_url)
+        
+        return result
 
 
 # Public API - backward compatibility

@@ -19,7 +19,6 @@ class UserRepository(ABC):
     def update(self, user_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         pass
 
-
 # 2. Implementation: MongoDB
 class MongoUserRepository(UserRepository):
     """MongoDB implementation"""
@@ -110,3 +109,4 @@ def update_user(user_id: str, data: dict) -> dict:
 
 def update_user_by_cognito_id(cognito_id: str, data: dict):
     return _service.update_user_by_cognito_id(cognito_id, data)
+
