@@ -1,0 +1,17 @@
+[project]
+name = "educonnect-backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "boto3>=1.42.2",
+    "flask>=3.1.2",
+    "flask-swagger-ui>=5.21.0",
+    "gunicorn>=23.0.0",
+    "pyjwt>=2.10.1",
+    "pymongo>=4.15.5",
+    "pytest>=9.0.1",
+    "python-dotenv>=1.2.1",
+    "requests>=2.32.5",
+]
