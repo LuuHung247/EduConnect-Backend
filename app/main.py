@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.utils.mongodb import connect_to_mongo, close_mongo_connection
 from app.dependencies.auth import get_current_user
+from app.routers import users, series, lessons
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,6 +29,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(users.router)
+app.include_router(series.router)
+app.include_router(lessons.router)
 
 # Health Check Route
 @app.get("/health", tags=["System"])

@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 
-from common import MongoBaseModel, PyObjectId
+from app.schemas.common import MongoBaseModel, PyObjectId
 
 class SerieBase(BaseModel):
     serie_title: str = Field(..., min_length=1)

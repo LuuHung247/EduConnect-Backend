@@ -1,177 +1,99 @@
-import requests
+import httpx
 import os
 from typing import List, Optional, Dict
 
 class MediaServiceClient:
-    """Client to communicate with Media Storage Microservice"""
     
     def __init__(self):
         self.base_url = os.environ.get('MEDIA_SERVICE_URL', 'http://localhost:5002')
-        self.timeout = 300  # 5 minutes for large files
+        self.timeout = 300.0
     
-    def _make_request(self, method: str, endpoint: str, **kwargs):
-        """Make HTTP request with error handling"""
+    async def _make_request(self, method: str, endpoint: str, **kwargs):
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            try:
+                url = f"{self.base_url}{endpoint}"
+                response = await client.request(method, url, **kwargs)
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPError as e:
+                print(f"Error calling media service: {e}")
+                return None
+
+    async def upload_thumbnail(self, file_content: bytes, filename: str, content_type: str, user_id: str) -> Optional[str]:
         try:
-            url = f"{self.base_url}{endpoint}"
-            response = requests.request(method, url, **kwargs)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error calling media service: {e}")
-            raise Exception(f"Media service error: {str(e)}")
-    
-    def upload_thumbnail(self, file, user_id: str) -> Optional[str]:
-        """Upload thumbnail image"""
-        try:
-            # Reset file pointer if possible
-            if hasattr(file, 'seek'):
-                file.seek(0)
-            
-            # Read file content
-            file_content = file.read() if hasattr(file, 'read') else file
-            filename = getattr(file, 'filename', 'thumbnail.jpg')
-            content_type = getattr(file, 'content_type', None) or getattr(file, 'mimetype', 'image/jpeg')
-            
             files = {'file': (filename, file_content, content_type)}
             data = {'user_id': user_id}
             
-            result = self._make_request(
+            result = await self._make_request(
                 'POST',
                 '/api/upload/thumbnail',
                 files=files,
-                data=data,
-                timeout=60
+                data=data
             )
-            
-            return result.get('url')
+            return result.get('url') if result else None
         except Exception as e:
             print(f"Error uploading thumbnail: {e}")
             return None
     
-    def upload_video(self, file, user_id: str) -> Optional[str]:
-        """Upload video file"""
+    async def upload_video(self, file_content: bytes, filename: str, content_type: str, user_id: str) -> Optional[str]:
         try:
-            # Reset file pointer if possible
-            if hasattr(file, 'seek'):
-                file.seek(0)
-            
-            # Read file content
-            file_content = file.read() if hasattr(file, 'read') else file
-            filename = getattr(file, 'filename', 'video.mp4')
-            content_type = getattr(file, 'content_type', None) or getattr(file, 'mimetype', 'video/mp4')
-            
             files = {'file': (filename, file_content, content_type)}
             data = {'user_id': user_id}
             
-            result = self._make_request(
+            result = await self._make_request(
                 'POST',
                 '/api/upload/video',
                 files=files,
-                data=data,
-                timeout=self.timeout
+                data=data
             )
-            
-            return result.get('url')
+            return result.get('url') if result else None
         except Exception as e:
             print(f"Error uploading video: {e}")
             return None
     
-    def upload_document(self, file, user_id: str) -> Optional[str]:
-        """Upload document file"""
+    async def upload_document(self, file_content: bytes, filename: str, content_type: str, user_id: str) -> Optional[str]:
         try:
-            # Reset file pointer if possible
-            if hasattr(file, 'seek'):
-                file.seek(0)
-            
-            # Read file content
-            file_content = file.read() if hasattr(file, 'read') else file
-            filename = getattr(file, 'filename', 'document.pdf')
-            content_type = getattr(file, 'content_type', None) or getattr(file, 'mimetype', 'application/pdf')
-            
             files = {'file': (filename, file_content, content_type)}
             data = {'user_id': user_id}
             
-            result = self._make_request(
+            result = await self._make_request(
                 'POST',
                 '/api/upload/document',
                 files=files,
-                data=data,
-                timeout=120
+                data=data
             )
-            
-            return result.get('url')
+            return result.get('url') if result else None
         except Exception as e:
             print(f"Error uploading document: {e}")
             return None
-    
-    def upload_documents_batch(self, files: List, user_id: str) -> List[str]:
-        """Upload multiple documents"""
+
+    async def delete_file(self, url_or_key: str) -> bool:
+        if not url_or_key: 
+            return False
         try:
-            file_tuples = []
-            for f in files:
-                # Reset file pointer if possible
-                if hasattr(f, 'seek'):
-                    f.seek(0)
-                
-                # Read file content
-                file_content = f.read() if hasattr(f, 'read') else f
-                filename = getattr(f, 'filename', 'document.pdf')
-                content_type = getattr(f, 'content_type', None) or getattr(f, 'mimetype', 'application/pdf')
-                
-                file_tuples.append(('files', (filename, file_content, content_type)))
-            
-            data = {'user_id': user_id}
-            
-            result = self._make_request(
-                'POST',
-                '/api/upload/documents/batch',
-                files=file_tuples,
-                data=data,
-                timeout=self.timeout
-            )
-            
-            return result.get('urls', [])
-        except Exception as e:
-            print(f"Error uploading documents: {e}")
-            return []
-    
-    def delete_file(self, url_or_key: str) -> bool:
-        """Delete a file"""
-        try:
-            result = self._make_request(
+            result = await self._make_request(
                 'DELETE',
                 '/api/delete',
-                json={'url_or_key': url_or_key},
-                timeout=30
+                json={'url_or_key': url_or_key}
             )
-            
-            return result.get('success', False)
+            return result.get('success', False) if result else False
         except Exception as e:
             print(f"Error deleting file: {e}")
             return False
     
-    def delete_files_batch(self, urls: List[str]) -> Dict:
-        """Delete multiple files"""
+    async def delete_files_batch(self, urls: List[str]) -> Dict:
+        if not urls:
+            return {"deleted": [], "failed": []}
         try:
-            result = self._make_request(
+            result = await self._make_request(
                 'DELETE',
                 '/api/delete/batch',
-                json={'urls': urls},
-                timeout=60
+                json={'urls': urls}
             )
-            
             return {
-                "deleted": result.get('deleted', []),
-                "failed": result.get('failed', [])
+                "deleted": result.get('deleted', []) if result else [],
+                "failed": result.get('failed', []) if result else urls
             }
         except Exception as e:
             print(f"Error deleting files: {e}")
             return {"deleted": [], "failed": urls}
-    
-    def health_check(self) -> bool:
-        """Check if media service is healthy"""
-        try:
-            response = requests.get(f"{self.base_url}/health", timeout=5)
-            return response.status_code == 200
-        except Exception:
-            return False
