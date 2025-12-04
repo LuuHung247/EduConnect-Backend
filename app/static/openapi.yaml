@@ -481,7 +481,7 @@ paths:
                   message:
                     type: string
 
-  /api/v1/series/subscribed:
+  /api/v1/series/subscriptions:
     get:
       tags:
         - Series
@@ -505,7 +505,7 @@ paths:
                     items:
                       $ref: "#/components/schemas/Serie"
 
-  /api/v1/series/created:
+  /api/v1/series/me:
     get:
       tags:
         - Series

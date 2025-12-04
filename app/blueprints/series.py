@@ -77,7 +77,7 @@ def list_series():
         return _error_response(str(e))
 
 
-@bp.route("/subscribed", methods=["GET"])
+@bp.route("/subscriptions", methods=["GET"])
 @authenticate_jwt
 @cached_with_user(timeout=120)  # Cache 2 phút, per user (ETag included)
 def get_user_subscribed_series():
@@ -91,7 +91,7 @@ def get_user_subscribed_series():
         return _error_response(str(e))
 
 
-@bp.route("/created", methods=["GET"])
+@bp.route("/me", methods=["GET"])
 @authenticate_jwt
 @cached_with_user(timeout=120)  # Cache 2 phút, per user (ETag included)
 def get_user_created_series():

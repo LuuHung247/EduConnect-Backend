@@ -61,7 +61,7 @@ def _build_cache_key(scope: str, include_user: bool = False) -> str:
     
     Ví dụ:
     - educonnect:public:GET:/api/v1/series:page=1
-    - educonnect:user_abc123:GET:/api/v1/series/subscribed:
+    - educonnect:user_abc123:GET:/api/v1/series/subscriptions:
     """
     method = request.method
     path = request.path
@@ -87,7 +87,7 @@ def make_cache_key_with_user():
     """
     Cache key cho user-specific endpoints.
     
-    Format: educonnect:user_abc123:GET:/api/v1/series/subscribed:
+    Format: educonnect:user_abc123:GET:/api/v1/series/subscriptions:
     """
     return _build_cache_key(scope='user', include_user=True)
 
@@ -220,7 +220,7 @@ def cached_with_user(timeout=300):
     Tự động thêm ETag header.
     
     Usage:
-        @bp.route("/subscribed", methods=["GET"])
+        @bp.route("/subscriptions", methods=["GET"])
         @authenticate_jwt
         @cached_with_user(timeout=120)
         def get_subscribed():
@@ -314,9 +314,9 @@ def invalidate_series_cache(serie_id: str = None):
         # Public series endpoints
         patterns.append(f"{REDIS_KEY_PREFIX}:public:GET:/api/v1/series*")
         
-        # All users' subscribed/created series
-        patterns.append(f"{REDIS_KEY_PREFIX}:user_*:GET:/api/v1/series/subscribed*")
-        patterns.append(f"{REDIS_KEY_PREFIX}:user_*:GET:/api/v1/series/created*")
+        # All users' subscribed/me series
+        patterns.append(f"{REDIS_KEY_PREFIX}:user_*:GET:/api/v1/series/subscriptions*")
+        patterns.append(f"{REDIS_KEY_PREFIX}:user_*:GET:/api/v1/series/me*")
         
         # Specific serie
         if serie_id:
