@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, g, Response
+from flask import Blueprint, request, g, Response
 from app.middleware.auth import authenticate_jwt
 from app.services.lesson_service import (
     create_lesson,
@@ -9,24 +9,24 @@ from app.services.lesson_service import (
     delete_document_by_url,
 )
 import json
-from app.utils.json_encoder import JSONEncoder, serialize_doc
-# API Version 1
+from app.utils.json_encoder import JSONEncoder
+from app.utils.cache import (
+    cached_with_user,
+    invalidate_lessons_cache,
+)
+
 bp = Blueprint("lessons", __name__, url_prefix="/api/v1/series/<series_id>/lessons")
 
 
 def _success_response(data, message=None, status=200):
-    payload = data
-    
     return Response(
-        json.dumps(payload, cls=JSONEncoder),
+        json.dumps(data, cls=JSONEncoder),
         mimetype="application/json",
         status=status
     )
 
 
-
 def _error_response(message, status=500):
-    """Helper: Create error response"""
     return Response(
         json.dumps({"success": False, "message": message}),
         mimetype="application/json",
@@ -47,6 +47,10 @@ def create_lesson_route(series_id):
         id_token = g.user.get("idToken")
         
         lesson = create_lesson(data, user_id, id_token, files)
+        
+        # Invalidate cache
+        invalidate_lessons_cache(series_id)
+        
         return _success_response(lesson, "Lesson created successfully", 201)
     
     except Exception as e:
@@ -55,6 +59,7 @@ def create_lesson_route(series_id):
 
 @bp.route("", methods=["GET"], strict_slashes=False)
 @authenticate_jwt
+@cached_with_user(timeout=300)  # Cache 5 phút, per user (ETag included)
 def list_lessons(series_id):
     """List all lessons in a series"""
     try:
@@ -67,6 +72,7 @@ def list_lessons(series_id):
 
 @bp.route("/<lesson_id>", methods=["GET"])
 @authenticate_jwt
+@cached_with_user(timeout=300)  # Cache 5 phút, per user (ETag included)
 def get_lesson_detail(series_id, lesson_id):
     """Get lesson details by ID"""
     try:
@@ -97,6 +103,9 @@ def update_lesson_route(series_id, lesson_id):
         if not updated:
             return _error_response("Lesson not found", 404)
         
+        # Invalidate cache
+        invalidate_lessons_cache(series_id, lesson_id)
+        
         return _success_response(updated, "Lesson updated successfully")
     
     except Exception as e:
@@ -112,6 +121,9 @@ def delete_lesson_route(series_id, lesson_id):
         
         if not deleted:
             return _error_response("Lesson not found", 404)
+        
+        # Invalidate cache
+        invalidate_lessons_cache(series_id, lesson_id)
         
         return _success_response(None, "Lesson deleted successfully")
     
@@ -133,6 +145,10 @@ def delete_document_route(series_id, lesson_id):
             return _error_response("docUrl is required", 400)
         
         delete_document_by_url(series_id, lesson_id, doc_url)
+        
+        # Invalidate cache
+        invalidate_lessons_cache(series_id, lesson_id)
+        
         return _success_response(None, "Document deleted successfully")
     
     except ValueError as e:

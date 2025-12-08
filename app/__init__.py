@@ -4,7 +4,7 @@ from pathlib import Path
 import json
 from dotenv import load_dotenv
 import os
-
+from app.utils.cache import init_cache
 # Load environment variables from .env file
 load_dotenv()
 
@@ -34,7 +34,11 @@ def create_app(config_object=None):
     app.register_blueprint(users_bp)
     app.register_blueprint(series_bp)
     app.register_blueprint(lessons_bp)
-   
+    
+    # Initialize cache
+    from app.utils.cache import init_cache
+    init_cache(app)
+    
     # Setup Swagger UI with flask-swagger-ui
     if get_swaggerui_blueprint is not None:
         SWAGGER_URL = '/apidocs'  # URL for exposing Swagger UI
