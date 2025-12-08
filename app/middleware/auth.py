@@ -8,13 +8,13 @@ from flask import request, g, jsonify, current_app
 import os
 import requests
 import jwt
-from jwt.algorithms import RSAAlgorithm
+from jwt import PyJWKClient  # Import PyJWKClient thay vì RSAAlgorithm
 from typing import Optional, Dict, Any
 from datetime import datetime
 
 
 # Cache cho JWKS
-_JWKS_CACHE = {"keys": None, "fetched_at": None}
+_JWKS_CACHE = {"keys": None, "fetched_at": None, "jwks_client": None}
 
 
 def _get_config(key: str, default=None):
@@ -55,60 +55,26 @@ def _get_issuer() -> Optional[str]:
     return None
 
 
-def _fetch_jwks() -> Optional[list]:
-    """Fetch JWKS from Cognito"""
-    url = _get_jwks_url()
-    if not url:
+def _get_jwks_client() -> Optional[PyJWKClient]:
+    """Get or create PyJWKClient"""
+    if _JWKS_CACHE['jwks_client'] is not None:
+        return _JWKS_CACHE['jwks_client']
+    
+    jwks_url = _get_jwks_url()
+    if not jwks_url:
         return None
     
     try:
-        response = requests.get(url, timeout=5)
-        response.raise_for_status()
-        return response.json().get('keys', [])
+        cache_ttl = int(_get_config('JWKS_CACHE_TTL', '86400'))
+        client = PyJWKClient(jwks_url, cache_keys=True, lifespan=cache_ttl)
+        _JWKS_CACHE['jwks_client'] = client
+        return client
     except Exception as e:
         try:
-            current_app.logger.error(f"Failed to fetch JWKS: {e}")
+            current_app.logger.error(f"Failed to create JWKS client: {e}")
         except RuntimeError:
-            print(f"Failed to fetch JWKS: {e}")
+            print(f"Failed to create JWKS client: {e}")
         return None
-
-
-def _get_jwks_keys() -> Optional[list]:
-    """Get JWKS keys with caching"""
-    cache_ttl = int(_get_config('JWKS_CACHE_TTL', '86400'))
-    now = datetime.now()
-    
-    if (_JWKS_CACHE['keys'] is not None and 
-        _JWKS_CACHE['fetched_at'] is not None and
-        (now - _JWKS_CACHE['fetched_at']).total_seconds() < cache_ttl):
-        return _JWKS_CACHE['keys']
-    
-    keys = _fetch_jwks()
-    if keys is not None:
-        _JWKS_CACHE['keys'] = keys
-        _JWKS_CACHE['fetched_at'] = now
-    
-    return keys
-
-
-def _get_public_key(kid: str) -> Optional[Any]:
-    """Get public key for specific kid"""
-    keys = _get_jwks_keys()
-    if not keys:
-        return None
-    
-    for jwk in keys:
-        if jwk.get('kid') == kid:
-            try:
-                return RSAAlgorithm.from_jwk(jwk)
-            except Exception as e:
-                try:
-                    current_app.logger.error(f"Failed to convert JWK: {e}")
-                except RuntimeError:
-                    print(f"Failed to convert JWK: {e}")
-                return None
-    
-    return None
 
 
 def _extract_token() -> Optional[str]:
@@ -131,15 +97,20 @@ def _verify_token(token: str) -> Dict[str, Any]:
     if not kid:
         raise jwt.InvalidTokenError('Token missing kid in header')
     
-    # Get public key
-    public_key = _get_public_key(kid)
-    if not public_key:
-        # Retry after clearing cache
-        _JWKS_CACHE['keys'] = None
-        public_key = _get_public_key(kid)
-        
-        if not public_key:
-            raise jwt.InvalidTokenError('Public key not found for kid')
+    # Get JWKS client
+    jwks_client = _get_jwks_client()
+    if not jwks_client:
+        raise jwt.InvalidTokenError('JWKS client not available')
+    
+    # Get signing key
+    try:
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
+    except Exception as e:
+        try:
+            current_app.logger.error(f"Failed to get signing key: {e}")
+        except RuntimeError:
+            print(f"Failed to get signing key: {e}")
+        raise jwt.InvalidTokenError(f'Failed to get signing key: {e}')
     
     # Decode unverified để check token_use
     try:
@@ -176,12 +147,12 @@ def _verify_token(token: str) -> Dict[str, Any]:
     
     # Verify and decode
     try:
-        payload = jwt.decode(token, key=public_key, **decode_options)
+        payload = jwt.decode(token, key=signing_key.key, **decode_options)
     except jwt.exceptions.MissingRequiredClaimError as e:
         # If missing aud for access token, that's okay
         if 'aud' in str(e) and token_use == 'access':
             decode_options['options'] = {'verify_aud': False}
-            payload = jwt.decode(token, key=public_key, **decode_options)
+            payload = jwt.decode(token, key=signing_key.key, **decode_options)
         else:
             raise
     

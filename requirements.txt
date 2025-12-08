@@ -3,9 +3,11 @@ gunicorn
 python-dotenv
 pymongo
 boto3
-PyJWT
+PyJWT[crypto]==2.6.0
 requests
 flask-swagger-ui
 pytest
 redis
 flask-caching
+flask_cors
+cryptography
