@@ -105,59 +105,66 @@ class UserService:
     
     @staticmethod
     def sync_cognito_user(user_data):
-        _, db = get_db()
-        users_collection = db["users"]
-        
-        cognito_sub = user_data.get('cognito_sub')
-        email = user_data.get('email')
-        
-        if not cognito_sub or not email:
-             return None, "Missing required user info"
+        try:
+            _, db = get_db()
+            users_collection = db["users"]
+            
+            cognito_sub = user_data.get('cognito_sub')
+            email = user_data.get('email')
+            
+            if not cognito_sub or not email:
+                return None, "Missing required user info"
 
-        if not existing_user:
-            existing_user = users_collection.find_one({"email": email})
+            existing_user = None
 
-        now = datetime.now(timezone.utc)
+            if not existing_user:
+                existing_user = users_collection.find_one({"email": email})
 
-        if not existing_user:
-            existing_user = users_collection.find_one({"email": email})
+            now = datetime.now(timezone.utc)
 
-        now = datetime.now(timezone.utc)
-        
-        update_data = {
-            "email": email,
-            "cognito_sub": cognito_sub,
-            "lastLogin": now,
-            "updatedAt": now
-        }
-        
-        fields_to_sync = ['name', 'gender', 'birthdate', 'avatar']
-        for field in fields_to_sync:
-            if user_data.get(field):
-                update_data[field] = user_data.get(field)
+            if not existing_user:
+                existing_user = users_collection.find_one({"email": email})
 
-        if existing_user:
-            # Cập nhật user hiện có
-            users_collection.update_one(
-                {"_id": existing_user["_id"]},
-                {"$set": update_data}
-            )
-            return str(existing_user["_id"]), None
-        else:
-            # Tạo user mới
-            new_user_data = {
-                "_id": cognito_sub,
-                **update_data,
-                "role": "student",
-                "bio": "",
-                "serie_subscribe": [],
-                "createdAt": now
+            now = datetime.now(timezone.utc)
+            
+            update_data = {
+                "email": email,
+                "cognito_sub": cognito_sub,
+                "lastLogin": now,
+                "updatedAt": now
             }
-            if "name" not in new_user_data: 
-                new_user_data["name"] = email.split('@')[0]
+            
+            fields_to_sync = ['name', 'gender', 'birthdate', 'avatar']
+            for field in fields_to_sync:
+                if user_data.get(field):
+                    update_data[field] = user_data.get(field)
 
-            users_collection.insert_one(new_user_data)
-            return cognito_sub, None
+            if existing_user:
+                # Cập nhật user hiện có
+                users_collection.update_one(
+                    {"_id": existing_user["_id"]},
+                    {"$set": update_data}
+                )
+                return str(existing_user["_id"]), None
+            else:
+                # Tạo user mới
+                new_user_data = {
+                    "_id": cognito_sub,
+                    **update_data,
+                    "role": "student",
+                    "bio": "",
+                    "serie_subscribe": [],
+                    "createdAt": now
+                }
+                if "name" not in new_user_data: 
+                    new_user_data["name"] = email.split('@')[0]
+
+                users_collection.insert_one(new_user_data)
+                return cognito_sub, None
+        
+        except Exception as e:
+            print(f"User Sync Error: {str(e)}")
+            return None, str(e)
 
 
 # Public API - giữ backward compatibility

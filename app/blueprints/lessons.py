@@ -43,8 +43,8 @@ def create_lesson_route(series_id):
         data["lesson_serie"] = series_id
         
         files = request.files if request.files else None
-        user_id = g.user.get("userId")
-        id_token = g.user.get("idToken")
+        user_id = g.user_sub
+        id_token = request.headers.get('Authorization', '').replace('Bearer ', '')
         
         lesson = create_lesson(data, user_id, id_token, files)
         
@@ -95,8 +95,8 @@ def update_lesson_route(series_id, lesson_id):
         data = dict(request.form) if request.form else (request.get_json() or {})
         files = request.files if request.files else None
         
-        user_id = g.user.get("userId")
-        id_token = g.user.get("idToken")
+        user_id = g.user_sub
+        id_token = request.headers.get('Authorization', '').replace('Bearer ', '')
         
         updated = update_lesson(series_id, lesson_id, data, user_id, id_token, files)
         
