@@ -48,8 +48,8 @@ def create_serie_route():
         data = request.form.to_dict() if request.form else request.get_json() or {}
         file = request.files.get("serie_thumbnail") if request.files else None
         
-        user_id = g.user.get("userId")
-        id_token = g.user.get("idToken")
+        user_id = g.user_sub
+        id_token = request.headers.get('Authorization', '').replace('Bearer ', '')
         
         result = create_serie(data, user_id, id_token, file)
         
@@ -83,7 +83,7 @@ def list_series():
 def get_user_subscribed_series():
     """Get series subscribed by current user"""
     try:
-        user_id = g.user.get("userId")
+        user_id = g.user_sub
         result = get_series_subscribed_by_user(user_id)
         return _success_response(result)
     
@@ -97,7 +97,7 @@ def get_user_subscribed_series():
 def get_user_created_series():
     """Get series created by current user"""
     try:
-        user_id = g.user.get("userId")
+        user_id = g.user_sub
         result = get_all_series_by_user(user_id)
         return _success_response(result)
     
@@ -146,8 +146,8 @@ def update_serie_route(serie_id):
         data = request.form.to_dict() if request.form else request.get_json() or {}
         file = request.files.get("serie_thumbnail") if request.files else None
         
-        user_id = g.user.get("userId")
-        id_token = g.user.get("idToken")
+        user_id = g.user_sub
+        id_token = request.headers.get('Authorization', '').replace('Bearer ', '')
         
         updated = update_serie(serie_id, data, user_id, id_token, file)
         
@@ -168,8 +168,8 @@ def update_serie_route(serie_id):
 def subscribe_to_serie(serie_id):
     """Subscribe current user to a series"""
     try:
-        user_id = g.user.get("userId")
-        user_email = g.user.get("email")
+        user_id = g.user_sub
+        user_email = g.user_email
         
         if not user_id or not user_email:
             return _error_response("Thiếu thông tin người dùng", 400)
@@ -193,8 +193,8 @@ def subscribe_to_serie(serie_id):
 def unsubscribe_from_serie(serie_id):
     """Unsubscribe current user from a series"""
     try:
-        user_id = g.user.get("userId")
-        user_email = g.user.get("email")
+        user_id = g.user_sub
+        user_email = g.user_email
         
         if not user_id or not user_email:
             return _error_response("Thiếu thông tin người dùng", 400)
@@ -218,7 +218,7 @@ def unsubscribe_from_serie(serie_id):
 def delete_serie_route(serie_id):
     """Delete a series"""
     try:
-        user_id = g.user.get("userId")
+        user_id = g.user_sub
         result = delete_serie(serie_id)
         
         if not result.get("success"):

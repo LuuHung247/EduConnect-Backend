@@ -3,6 +3,7 @@ from app.services.user_service import (
     create_user,
     get_user_by_id,
     update_user,
+    UserService
 )
 from app.middleware.auth import authenticate_jwt
 
@@ -24,6 +25,7 @@ def _error_response(message, status=500):
 
 
 @bp.route("/profile", methods=["POST"])
+@authenticate_jwt
 def create_profile():
     """Create user profile"""
     try:
@@ -50,16 +52,15 @@ def create_profile():
 def get_current_profile():
     """Get current authenticated user's profile"""
     try:
-        user_id = g.user.get("userId")
+        user_id = g.user_sub
         user = get_user_by_id(user_id)
         
         # Auto-create profile if not exists
         if not user:
             user_data = {
                 "userId": user_id,
-                "name": g.user.get("name"),
-                "email": g.user.get("email"),
-                "username": g.user.get("username"),
+                "name": g.user_name,
+                "email": g.user_email,
             }
             user = create_user(user_data)
             return _success_response(user, "User profile created automatically", 201)
@@ -67,6 +68,7 @@ def get_current_profile():
         return _success_response(user)
     
     except Exception as e:
+        print(f"Get Profile error: {str(e)}")
         return _error_response(str(e))
 
 
@@ -104,3 +106,36 @@ def update_user_profile(user_id):
     
     except Exception as e:
         return _error_response(str(e))
+    
+@bp.route('/sync', methods=['POST'])
+@authenticate_jwt
+def sync_user():
+    try:
+        user_data = {
+            'cognito_sub': g.user_sub,
+            'email': g.user_email,
+            'name': g.user_name or request.json.get('name')
+        }
+        
+        additional_info = request.get_json() or {}
+        user_data.update({
+            'gender': additional_info.get('gender'),
+            'birthdate': additional_info.get('birthdate'),
+            'avatar': additional_info.get('avatar'),
+        })
+
+        user_id, error = UserService.sync_cognito_user(user_data)
+        
+        if error:
+            return jsonify({'error': error}), 400
+            
+        return jsonify({
+            'success': True,
+            'message': 'User synced successfully',
+            'userId': user_id,
+            'data': user_data
+        }), 200
+        
+    except Exception as e:
+        print(f"Sync Error: {str(e)}")
+        return jsonify({'error': str(e)}), 500

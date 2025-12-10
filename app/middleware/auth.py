@@ -8,10 +8,17 @@ from flask import request, g, jsonify, current_app
 import os
 import requests
 import jwt
-from jwt import PyJWKClient  # Import PyJWKClient thay vì RSAAlgorithm
+from jwt import PyJWKClient
+from jose import jwt, jwk
+from jose.utils import base64url_decode
 from typing import Optional, Dict, Any
 from datetime import datetime
 
+AWS_REGION = os.getenv('AWS_REGION', 'ap-southeast-1')
+USER_POOL_ID = os.getenv('COGNITO_USER_POOL_ID')
+APP_CLIENT_ID = os.getenv('COGNITO_APP_CLIENT_ID')
+
+COGNITO_JWKS_URL = f"https://cognito-idp.{AWS_REGION}.amazonaws.com/{USER_POOL_ID}/.well-known/jwks.json"
 
 # Cache cho JWKS
 _JWKS_CACHE = {"keys": None, "fetched_at": None, "jwks_client": None}
@@ -224,80 +231,58 @@ def authenticate_jwt(f):
         - Access Token: Contains client_id, scope, but minimal user info
     """
     @wraps(f)
-    def decorated(*args, **kwargs):
-        # Extract token
-        token = _extract_token()
+    def decorated_function(*args, **kwargs):
+        token = None
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            if auth_header.startswith("Bearer "):
+                token = auth_header.split(" ")[1]
+        
         if not token:
-            return jsonify({
-                'success': False,
-                'error': 'unauthorized',
-                'message': 'No authentication token provided'
-            }), 401
-        
-        # Check JWKS configuration
-        jwks_url = _get_jwks_url()
-        allow_insecure = str(_get_config('ALLOW_INSECURE_JWT', 'false')).lower() in ('true', '1', 'yes')
-        
-        if not jwks_url:
-            if not allow_insecure:
-                return jsonify({
-                    'success': False,
-                    'error': 'configuration_error',
-                    'message': 'JWT verification not configured. Set COGNITO_USER_POOL_ID and AWS_REGION'
-                }), 500
+            return jsonify({"message": "Token is missing"}), 401
+
+        try:
+            # 1. Lấy Key từ Cognito
+            jwks = requests.get(COGNITO_JWKS_URL).json()
+
+            # 2. Decode header token
+            header = jwt.get_unverified_header(token)
+
+            pem_key = None
+
+            for key in jwks['keys']:
+                if key['kid'] == header['kid']:
+                    pem_key = jwk.construct(key).to_pem()
+                    break
             
-            # Insecure mode for development only
-            try:
-                payload = jwt.decode(token, options={'verify_signature': False})
-                g.user = _build_user_object(token, payload)
-                try:
-                    current_app.logger.warning('JWT verification in INSECURE mode - not for production!')
-                except RuntimeError:
-                    print('WARNING: JWT verification in INSECURE mode - not for production!')
-            except jwt.InvalidTokenError as e:
-                return jsonify({
-                    'success': False,
-                    'error': 'invalid_token',
-                    'message': str(e)
-                }), 401
-        else:
-            # Secure verification
-            try:
-                payload = _verify_token(token)
-                g.user = _build_user_object(token, payload)
+            if pem_key:
+                print(f"DEBUG: Verifying token with Audience (Client ID): {APP_CLIENT_ID}")
+
+                # 3. Verify Token
+                payload = jwt.decode(
+                    token,
+                    pem_key,
+                    algorithms=['RS256'],
+                    audience=APP_CLIENT_ID, # Verify client id
+                    issuer=f"https://cognito-idp.{AWS_REGION}.amazonaws.com/{USER_POOL_ID}",
+                    options={'verify_at_hash': False}
+                )
                 
-            except jwt.ExpiredSignatureError:
-                return jsonify({
-                    'success': False,
-                    'error': 'token_expired',
-                    'message': 'Token has expired'
-                }), 403
+                # Lưu thông tin user vào context request
+                g.user_sub = payload['sub'] # ID
+                g.user_email = payload.get('email')
+                g.user_name = payload.get('name') or payload.get('cognito:username')
                 
-            except jwt.InvalidAudienceError:
-                return jsonify({
-                    'success': False,
-                    'error': 'invalid_audience',
-                    'message': 'Token audience mismatch'
-                }), 401
-                
-            except jwt.InvalidIssuerError:
-                return jsonify({
-                    'success': False,
-                    'error': 'invalid_issuer',
-                    'message': 'Token issuer mismatch'
-                }), 401
-                
-            except jwt.InvalidTokenError as e:
-                try:
-                    current_app.logger.error(f"Token verification failed: {e}")
-                except RuntimeError:
-                    print(f"Token verification failed: {e}")
-                return jsonify({
-                    'success': False,
-                    'error': 'invalid_token',
-                    'message': 'Invalid authentication token'
-                }), 403
-        
+            else:
+                 return jsonify({"message": "Unable to find appropriate key"}), 401
+
+        except jwt.ExpiredSignatureError:
+            return jsonify({"message": "Token expired"}), 401
+        except jwt.JWTClaimsError as e:
+            print(f"DEBUG: Claims Error: {str(e)}")
+            return jsonify({"message": f"Invalid claims: {str(e)}"}), 401
+        except Exception as e:
+            return jsonify({"message": f"Invalid token: {str(e)}"}), 401
+
         return f(*args, **kwargs)
-    
-    return decorated
+    return decorated_function

@@ -46,10 +46,22 @@ class MongoUserRepository(UserRepository):
         # Create new
         payload = {
             "_id": cognito_id,
-            **{k: v for k, v in data.items() if k != "userId"},
+            "email": data.get("email"),
+            "name": data.get("name"),
+            "username": data.get("username", data.get("email").split('@')[0]),
+            "gender": data.get("gender", ""),
+            "birthdate": data.get("birthdate", ""),
+            
+            # Các trường mặc định
+            "role": "student",
+            "avatar": "",
+            "bio": "",
+            "cognito_sub": cognito_id,
+            
             "serie_subscribe": [],
             "createdAt": datetime.now(timezone.utc),
-            "updatedAt": datetime.now(timezone.utc)
+            "updatedAt": datetime.now(timezone.utc),
+            "lastLogin": datetime.now(timezone.utc)
         }
         collection.insert_one(payload)
         return payload
@@ -90,6 +102,62 @@ class UserService:
     
     def update_user_by_cognito_id(self, cognito_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         return self._repository.update(cognito_id, data)
+    
+    @staticmethod
+    def sync_cognito_user(user_data):
+        _, db = get_db()
+        users_collection = db["users"]
+        
+        cognito_sub = user_data.get('cognito_sub')
+        email = user_data.get('email')
+        
+        if not cognito_sub or not email:
+             return None, "Missing required user info"
+
+        if not existing_user:
+            existing_user = users_collection.find_one({"email": email})
+
+        now = datetime.now(timezone.utc)
+
+        if not existing_user:
+            existing_user = users_collection.find_one({"email": email})
+
+        now = datetime.now(timezone.utc)
+        
+        update_data = {
+            "email": email,
+            "cognito_sub": cognito_sub,
+            "lastLogin": now,
+            "updatedAt": now
+        }
+        
+        fields_to_sync = ['name', 'gender', 'birthdate', 'avatar']
+        for field in fields_to_sync:
+            if user_data.get(field):
+                update_data[field] = user_data.get(field)
+
+        if existing_user:
+            # Cập nhật user hiện có
+            users_collection.update_one(
+                {"_id": existing_user["_id"]},
+                {"$set": update_data}
+            )
+            return str(existing_user["_id"]), None
+        else:
+            # Tạo user mới
+            new_user_data = {
+                "_id": cognito_sub,
+                **update_data,
+                "role": "student",
+                "bio": "",
+                "serie_subscribe": [],
+                "createdAt": now
+            }
+            if "name" not in new_user_data: 
+                new_user_data["name"] = email.split('@')[0]
+
+            users_collection.insert_one(new_user_data)
+            return cognito_sub, None
 
 
 # Public API - giữ backward compatibility
