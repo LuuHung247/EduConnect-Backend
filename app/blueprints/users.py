@@ -124,7 +124,7 @@ def sync_user():
             'avatar': additional_info.get('avatar'),
         })
 
-        user_id, error = UserService.sync_cognito_user(user_data)
+        synced_user, error = UserService.sync_cognito_user(user_data)
         
         if error:
             return jsonify({'error': error}), 400
@@ -132,8 +132,7 @@ def sync_user():
         return jsonify({
             'success': True,
             'message': 'User synced successfully',
-            'userId': user_id,
-            'data': user_data
+            'data': synced_user
         }), 200
         
     except Exception as e:

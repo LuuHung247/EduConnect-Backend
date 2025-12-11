@@ -14,6 +14,8 @@ from jose.utils import base64url_decode
 from typing import Optional, Dict, Any
 from datetime import datetime
 
+from app.services.user_service import get_user_by_id
+
 AWS_REGION = os.getenv('AWS_REGION', 'ap-southeast-1')
 USER_POOL_ID = os.getenv('COGNITO_USER_POOL_ID')
 APP_CLIENT_ID = os.getenv('COGNITO_APP_CLIENT_ID')
@@ -272,7 +274,12 @@ def authenticate_jwt(f):
                 g.user_sub = payload['sub'] # ID
                 g.user_email = payload.get('email')
                 g.user_name = payload.get('name') or payload.get('cognito:username')
-                
+                user_in_db = get_user_by_id(g.user_sub)
+
+                if user_in_db:
+                    g.user_role = user_in_db.get('role', 'student')
+                else:
+                    g.user_role = 'student'
             else:
                  return jsonify({"message": "Unable to find appropriate key"}), 401
 
@@ -284,5 +291,20 @@ def authenticate_jwt(f):
         except Exception as e:
             return jsonify({"message": f"Invalid token: {str(e)}"}), 401
 
+        return f(*args, **kwargs)
+    return decorated_function
+
+def instructor_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not hasattr(g, 'user_role'):
+            return jsonify({"message": "Authentication required first"}), 401
+            
+        if g.user_role not in ['instructor', 'admin']:
+            return jsonify({
+                "success": False,
+                "message": "Permission denied. Instructor role required."
+            }), 403
+            
         return f(*args, **kwargs)
     return decorated_function

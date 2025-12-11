@@ -115,52 +115,42 @@ class UserService:
             if not cognito_sub or not email:
                 return None, "Missing required user info"
 
-            existing_user = None
-
-            if not existing_user:
-                existing_user = users_collection.find_one({"email": email})
-
-            now = datetime.now(timezone.utc)
+            existing_user = users_collection.find_one({"_id": cognito_sub})
 
             if not existing_user:
                 existing_user = users_collection.find_one({"email": email})
 
             now = datetime.now(timezone.utc)
             
-            update_data = {
-                "email": email,
-                "cognito_sub": cognito_sub,
-                "lastLogin": now,
-                "updatedAt": now
-            }
-            
-            fields_to_sync = ['name', 'gender', 'birthdate', 'avatar']
-            for field in fields_to_sync:
-                if user_data.get(field):
-                    update_data[field] = user_data.get(field)
-
             if existing_user:
-                # Cập nhật user hiện có
-                users_collection.update_one(
+                update_data = {
+                    "lastLogin": now,
+                    "updatedAt": now
+                }
+                updated_user = users_collection.find_one_and_update(
                     {"_id": existing_user["_id"]},
-                    {"$set": update_data}
+                    {"$set": update_data},
+                    return_document=True
                 )
-                return str(existing_user["_id"]), None
+                return updated_user, None
             else:
-                # Tạo user mới
                 new_user_data = {
                     "_id": cognito_sub,
-                    **update_data,
+                    "email": email,
+                    "cognito_sub": cognito_sub,
+                    "name": user_data.get('name') or email.split('@')[0],
+                    "gender": user_data.get('gender', ""),
+                    "birthdate": user_data.get('birthdate', ""),
+                    "avatar": user_data.get('avatar', ""),
                     "role": "student",
                     "bio": "",
                     "serie_subscribe": [],
-                    "createdAt": now
+                    "createdAt": now,
+                    "updatedAt": now,
+                    "lastLogin": now
                 }
-                if "name" not in new_user_data: 
-                    new_user_data["name"] = email.split('@')[0]
-
                 users_collection.insert_one(new_user_data)
-                return cognito_sub, None
+                return new_user_data, None
         
         except Exception as e:
             print(f"User Sync Error: {str(e)}")

@@ -1,5 +1,5 @@
 from flask import Blueprint, request, g, Response
-from app.middleware.auth import authenticate_jwt
+from app.middleware.auth import authenticate_jwt, instructor_required
 from app.services.serie_service import (
     create_serie,
     get_all_series,
@@ -42,6 +42,7 @@ def _error_response(message, status=500):
 
 @bp.route("", methods=["POST"])
 @authenticate_jwt
+@instructor_required
 def create_serie_route():
     """Create a new series"""
     try:
@@ -140,6 +141,7 @@ def get_serie_detail(serie_id):
 
 @bp.route("/<serie_id>", methods=["PATCH"])
 @authenticate_jwt
+@instructor_required
 def update_serie_route(serie_id):
     """Update series information"""
     try:
