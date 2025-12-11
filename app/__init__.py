@@ -37,7 +37,7 @@ def create_app(config_object=None):
     
     # Initialize cache
     from app.utils.cache import init_cache
-    init_cache(app)
+    # init_cache(app)
     
     # Setup Swagger UI with flask-swagger-ui
     if get_swaggerui_blueprint is not None:

@@ -42,7 +42,7 @@ def _error_response(message, status=500):
 
 @bp.route("", methods=["POST"])
 @authenticate_jwt
-@instructor_required
+# @instructor_required
 def create_serie_route():
     """Create a new series"""
     try:
@@ -66,7 +66,7 @@ def create_serie_route():
 
 @bp.route("/", methods=["GET"])
 @authenticate_jwt
-@cached_public(timeout=300)  # Cache 5 phút, public (ETag included)
+# @cached_public(timeout=300)  # Cache 5 phút, public (ETag included)
 def list_series():
     """List all series with optional pagination"""
     try:
@@ -80,7 +80,7 @@ def list_series():
 
 @bp.route("/subscriptions", methods=["GET"])
 @authenticate_jwt
-@cached_with_user(timeout=120)  # Cache 2 phút, per user (ETag included)
+# @cached_with_user(timeout=120)  # Cache 2 phút, per user (ETag included)
 def get_user_subscribed_series():
     """Get series subscribed by current user"""
     try:
@@ -94,7 +94,7 @@ def get_user_subscribed_series():
 
 @bp.route("/me", methods=["GET"])
 @authenticate_jwt
-@cached_with_user(timeout=120)  # Cache 2 phút, per user (ETag included)
+# @cached_with_user(timeout=120)  # Cache 2 phút, per user (ETag included)
 def get_user_created_series():
     """Get series created by current user"""
     try:
@@ -107,7 +107,7 @@ def get_user_created_series():
 
 
 @bp.route("/search", methods=["GET"])
-@cached_public(timeout=60)  # Cache 1 phút (ETag included)
+# @cached_public(timeout=60)  # Cache 1 phút (ETag included)
 def search_series():
     """Search series by keyword"""
     try:
@@ -124,7 +124,7 @@ def search_series():
 
 
 @bp.route("/<serie_id>", methods=["GET"])
-@cached_public(timeout=300)  # Cache 5 phút (ETag included)
+# @cached_public(timeout=300)  # Cache 5 phút (ETag included)
 def get_serie_detail(serie_id):
     """Get series details by ID"""
     try:
@@ -141,7 +141,7 @@ def get_serie_detail(serie_id):
 
 @bp.route("/<serie_id>", methods=["PATCH"])
 @authenticate_jwt
-@instructor_required
+# @instructor_required
 def update_serie_route(serie_id):
     """Update series information"""
     try:
@@ -157,7 +157,7 @@ def update_serie_route(serie_id):
             return _error_response("Serie not found", 404)
         
         # Invalidate cache
-        invalidate_series_cache(serie_id)
+        # invalidate_series_cache(serie_id)
         
         return _success_response(updated, "Series updated successfully")
     
@@ -179,8 +179,8 @@ def subscribe_to_serie(serie_id):
         result = subscribe_serie(serie_id, user_id, user_email)
         
         # Invalidate caches
-        invalidate_series_cache(serie_id)
-        invalidate_user_cache(user_id)  # User's subscribed list changed
+        # invalidate_series_cache(serie_id)
+        # invalidate_user_cache(user_id)  # User's subscribed list changed
         
         return _success_response(result)
     
@@ -204,8 +204,8 @@ def unsubscribe_from_serie(serie_id):
         result = unsubscribe_serie(serie_id, user_id, user_email)
         
         # Invalidate caches
-        invalidate_series_cache(serie_id)
-        invalidate_user_cache(user_id)  # User's subscribed list changed
+        # invalidate_series_cache(serie_id)
+        # invalidate_user_cache(user_id)  # User's subscribed list changed
         
         return _success_response(result)
     
@@ -227,8 +227,8 @@ def delete_serie_route(serie_id):
             return _error_response(result.get("warning"), 400)
         
         # Invalidate caches
-        invalidate_series_cache(serie_id)
-        invalidate_user_cache(user_id)  # User's created series changed
+        # invalidate_series_cache(serie_id)
+        # invalidate_user_cache(user_id)  # User's created series changed
         
         return _success_response(None, "Serie deleted successfully")
     

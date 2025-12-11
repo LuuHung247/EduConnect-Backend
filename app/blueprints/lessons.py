@@ -49,7 +49,7 @@ def create_lesson_route(series_id):
         lesson = create_lesson(data, user_id, id_token, files)
         
         # Invalidate cache
-        invalidate_lessons_cache(series_id)
+        # invalidate_lessons_cache(series_id)
         
         return _success_response(lesson, "Lesson created successfully", 201)
     
@@ -59,7 +59,7 @@ def create_lesson_route(series_id):
 
 @bp.route("", methods=["GET"], strict_slashes=False)
 @authenticate_jwt
-@cached_with_user(timeout=300)  # Cache 5 phút, per user (ETag included)
+# @cached_with_user(timeout=300)  # Cache 5 phút, per user (ETag included)
 def list_lessons(series_id):
     """List all lessons in a series"""
     try:
@@ -72,7 +72,7 @@ def list_lessons(series_id):
 
 @bp.route("/<lesson_id>", methods=["GET"])
 @authenticate_jwt
-@cached_with_user(timeout=300)  # Cache 5 phút, per user (ETag included)
+# @cached_with_user(timeout=300)  # Cache 5 phút, per user (ETag included)
 def get_lesson_detail(series_id, lesson_id):
     """Get lesson details by ID"""
     try:
@@ -104,7 +104,7 @@ def update_lesson_route(series_id, lesson_id):
             return _error_response("Lesson not found", 404)
         
         # Invalidate cache
-        invalidate_lessons_cache(series_id, lesson_id)
+        # invalidate_lessons_cache(series_id, lesson_id)
         
         return _success_response(updated, "Lesson updated successfully")
     
@@ -123,7 +123,7 @@ def delete_lesson_route(series_id, lesson_id):
             return _error_response("Lesson not found", 404)
         
         # Invalidate cache
-        invalidate_lessons_cache(series_id, lesson_id)
+        # invalidate_lessons_cache(series_id, lesson_id)
         
         return _success_response(None, "Lesson deleted successfully")
     
@@ -147,7 +147,7 @@ def delete_document_route(series_id, lesson_id):
         delete_document_by_url(series_id, lesson_id, doc_url)
         
         # Invalidate cache
-        invalidate_lessons_cache(series_id, lesson_id)
+        # invalidate_lessons_cache(series_id, lesson_id)
         
         return _success_response(None, "Document deleted successfully")
     
