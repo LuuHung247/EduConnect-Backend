@@ -4,7 +4,7 @@ from app.utils.mongodb import get_db
 from app.utils.sns import create_topic, delete_topic, subscribe_to_serie, unsubscribe_from_topic
 from app.clients.media_client import MediaServiceClient
 from datetime import datetime, timezone
-
+from app.utils.ses import send_email
 
 # 1. Interface Repository
 class SerieRepository(ABC):
@@ -301,7 +301,7 @@ class SerieService:
         
         return self._repository.update(serie_id, data)
     
-    def subscribe_serie(self, serie_id: str, user_id: str, user_email: str) -> Dict[str, Any]:
+    def subscribe_serie(self, serie_id: str, user_id: str, user_email: str):
         result = self._repository.subscribe_user(serie_id, user_id)
         
         if not result.get("alreadySubscribed"):
@@ -339,6 +339,62 @@ class SerieService:
         
         return {"success": result}
 
+    def send_series_notification(serie_id: str, title: str, message: str) -> dict:
+        """
+        Gửi thông báo đến subscribers dùng AWS SES
+        """
+        _, db = get_db()
+        
+        # 1. Lấy thông tin series
+        serie = get_serie_by_id(serie_id)
+        if not serie:
+            raise ValueError("Khóa học không tồn tại")
+        
+        serie_title = serie.get("serie_title", "Khóa học")
+        
+        subscribers = db.users.find(
+            {"serie_subscribe": serie_id}, 
+            {"email": 1, "_id": 0}
+        )
+        
+        recipient_list = [sub.get("email") for sub in subscribers if sub.get("email")]
+        
+        if not recipient_list:
+            return {
+                "success": True,
+                "message": "Không có học viên nào đăng ký khóa học này."
+            }
+
+        email_subject = f"[{serie_title}] Thông báo: {title}"
+        
+        email_html = f"""
+        <html>
+        <body>
+            <h2>Thông báo từ khóa học {serie_title}</h2>
+            <p><strong>{title}</strong></p>
+            <p>{message}</p>
+            <hr/>
+            <p>Cảm ơn bạn đã học tập cùng EduConnect.</p>
+        </body>
+        </html>
+        """
+
+        try:
+            message_ids = send_email(
+                recipient_emails=recipient_list,
+                subject=email_subject,
+                body_text=message,
+                body_html=email_html
+            )
+            
+            return {
+                "success": True,
+                "recipient_count": len(recipient_list),
+                "message_ids": message_ids
+            }
+        except Exception as e:
+            print(f"Failed to send email: {str(e)}")
+            raise Exception("Lỗi khi gửi email thông báo")
 
 # Public API - backward compatibility
 _service = SerieService()
