@@ -6,7 +6,7 @@ import json
 import os
 
 # Redis Cache config
-# cache = Cache()
+cache = Cache()
 
 # Key prefix - Flask-Caching tự động thêm "flask_cache_" vào đầu
 # Nên key thực tế trong Redis sẽ là: flask_cache_educonnect:...
