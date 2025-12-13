@@ -11,6 +11,7 @@ from app.services.serie_service import (
     search_series_by_title,
     get_series_subscribed_by_user,
     get_all_series_by_user,
+    send_series_notification
 )
 import json
 from app.utils.json_encoder import JSONEncoder
@@ -236,3 +237,25 @@ def delete_serie_route(serie_id):
         return _error_response(str(e), 404)
     except Exception as e:
         return _error_response(str(e))
+    
+
+@bp.route("/<serie_id>/notify", methods=["POST"])
+@authenticate_jwt
+def send_notification_route(serie_id):
+    try:
+        data = request.get_json() or {}
+        title = data.get("title")
+        message = data.get("message")
+
+        if not title or not message:
+            return _error_response("Tiêu đề và nội dung thông báo là bắt buộc", 400)
+
+        result = send_series_notification(serie_id, title, message)
+        
+        return _success_response(result, "Thông báo đã được gửi thành công")
+
+    except ValueError as e:
+        return _error_response(str(e), 404)
+    except Exception as e:
+        print(f"Notification Error: {str(e)}")
+        return _error_response(str(e), 500)
