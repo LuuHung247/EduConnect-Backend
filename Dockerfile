@@ -12,6 +12,7 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     gcc \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements first for better caching
@@ -31,10 +32,6 @@ USER appuser
 
 # Expose port
 EXPOSE 5001
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5001/health').read()" || exit 1
 
 # Run with gunicorn
 CMD ["gunicorn", "--workers", "4", "--bind", "0.0.0.0:5001", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "app:app"]

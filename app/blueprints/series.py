@@ -56,8 +56,8 @@ def create_serie_route():
         result = create_serie(data, user_id, id_token, file)
         
         # Invalidate cache
-        invalidate_series_cache()
-        invalidate_user_cache(user_id)  # User's created series changed
+        # invalidate_series_cache()
+        # invalidate_user_cache(user_id)  # User's created series changed
         
         return _success_response(result, "Series created successfully", 201)
     

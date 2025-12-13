@@ -4,6 +4,7 @@ python-dotenv
 pymongo
 boto3
 PyJWT[crypto]==2.6.0
+python-jose[cryptography]
 requests
 flask-swagger-ui
 pytest
