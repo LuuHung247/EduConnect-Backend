@@ -386,7 +386,7 @@ def send_series_notification(serie_id: str, title: str, message: str) -> dict:
     
     # 2. Tìm danh sách email của những người đã subscribe khóa học này
     subscribers = db.users.find(
-        {"serie_subscribe": serie_id}, 
+        {"serie_subcribe": serie_id},
         {"email": 1, "_id": 0}
     )
     
