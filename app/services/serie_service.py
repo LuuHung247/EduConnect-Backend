@@ -408,16 +408,93 @@ def send_series_notification(serie_id: str, title: str, message: str, token: str
     email_subject = f"[{serie_title}] Thông báo mới: {title}"
 
     email_html = f"""
-    <html>
-    <body>
-        <h2>Thông báo từ khóa học {serie_title}</h2>
-        <p><strong>{title}</strong></p>
-        <p style="white-space: pre-line;">{message}</p>
-        <hr/>
-        <p>Cảm ơn bạn đã học tập cùng EduConnect.</p>
-    </body>
-    </html>
-    """
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+    
+    <!-- Header Full Width -->
+    <table role="presentation" style="width: 100%; border-collapse: collapse; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%);">
+        <tr>
+            <td style="padding: 50px 30px; text-align: center;">
+                <span style="font-size: 48px; line-height: 1; display: block; margin-bottom: 15px;">📚</span>
+                <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">
+                    EduConnect
+                </h1>
+                <p style="margin: 8px 0 0 0; color: rgba(255,255,255,0.95); font-size: 14px; font-weight: 500;">
+                    Nền tảng học tập trực tuyến
+                </p>
+            </td>
+        </tr>
+    </table>
+    
+    <!-- Course Badge Full Width -->
+    <table role="presentation" style="width: 100%; border-collapse: collapse; background: linear-gradient(135deg, #ec4899 0%, #f43f5e 100%); box-shadow: 0 4px 12px rgba(236, 72, 153, 0.2);">
+        <tr>
+            <td style="padding: 25px 30px;">
+                <p style="margin: 0; color: rgba(255,255,255,0.9); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px;">
+                    KHÓA HỌC
+                </p>
+                <p style="margin: 8px 0 0 0; color: #ffffff; font-size: 20px; font-weight: 700; letter-spacing: -0.3px;">
+                    {serie_title}
+                </p>
+            </td>
+        </tr>
+    </table>
+    
+    <!-- Main Content -->
+    <table role="presentation" style="width: 100%; border-collapse: collapse;">
+        <tr>
+            <td style="padding: 40px 30px;">
+                
+                <!-- Title -->
+                <h2 style="margin: 0 0 25px 0; color: #1f2937; font-size: 24px; font-weight: 700; line-height: 1.4;">
+                    {title}
+                </h2>
+                
+                <!-- Message Box -->
+                <table role="presentation" style="width: 100%; border-collapse: collapse; background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border-left: 5px solid #6366f1; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+                    <tr>
+                        <td style="padding: 30px;">
+                            <p style="margin: 0; color: #475569; font-size: 17px; line-height: 1.8; white-space: pre-line;">{message}</p>
+                        </td>
+                    </tr>
+                </table>
+                
+                <!-- Decorative Line -->
+                <div style="height: 3px; background: linear-gradient(90deg, transparent 0%, #6366f1 20%, #8b5cf6 50%, #ec4899 80%, transparent 100%); margin: 40px 0; border-radius: 3px;"></div>
+                
+            </td>
+        </tr>
+    </table>
+    
+    <!-- Footer Full Width -->
+    <table role="presentation" style="width: 100%; border-collapse: collapse; background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border-top: 1px solid #e2e8f0;">
+        <tr>
+            <td style="padding: 35px 30px; text-align: center;">
+                <p style="margin: 0 0 15px 0; color: #64748b; font-size: 15px; line-height: 1.6;">
+                    Cảm ơn bạn đã học tập cùng <strong style="color: #6366f1; font-weight: 700;">EduConnect</strong> 🎓
+                </p>
+                <div style="margin: 20px 0;">
+                    <a href="#" style="display: inline-block; margin: 0 10px; color: #94a3b8; text-decoration: none; font-size: 13px; font-weight: 500;">Trang chủ</a>
+                    <span style="color: #cbd5e1;">•</span>
+                    <a href="#" style="display: inline-block; margin: 0 10px; color: #94a3b8; text-decoration: none; font-size: 13px; font-weight: 500;">Khóa học của tôi</a>
+                    <span style="color: #cbd5e1;">•</span>
+                    <a href="#" style="display: inline-block; margin: 0 10px; color: #94a3b8; text-decoration: none; font-size: 13px; font-weight: 500;">Hỗ trợ</a>
+                </div>
+                <p style="margin: 15px 0 0 0; color: #94a3b8; font-size: 12px;">
+                    © 2024 EduConnect. All rights reserved.
+                </p>
+            </td>
+        </tr>
+    </table>
+    
+</body>
+</html>
+"""
 
     # 4. Gọi SES để gửi
     try:
