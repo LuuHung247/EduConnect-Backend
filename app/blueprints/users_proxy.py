@@ -30,15 +30,33 @@ def proxy_to_user_service(path):
         target_url += f"?{request.query_string.decode('utf-8')}"
 
     # Forward headers (especially Authorization)
+    # Note: Don't forward Content-Type for multipart, requests will set it automatically
     headers = {}
     for key, value in request.headers:
-        if key.lower() not in ['host', 'connection']:
+        if key.lower() not in ['host', 'connection', 'content-length']:
             headers[key] = value
 
-    # Get request body
+    # Get request body and files
     data = None
+    files = None
+
     if request.method in ['POST', 'PUT', 'PATCH']:
-        data = request.get_data()
+        if request.files:
+            # Handle file upload (multipart/form-data)
+            files = []
+            for key in request.files:
+                file = request.files[key]
+                files.append((key, (file.filename, file.read(), file.content_type)))
+
+            # Also get form data if any
+            if request.form:
+                data = request.form.to_dict()
+
+            # Remove Content-Type header to let requests set it with boundary
+            headers.pop('Content-Type', None)
+        else:
+            # Regular JSON/raw data
+            data = request.get_data()
 
     try:
         # Forward request to User Service
@@ -47,6 +65,7 @@ def proxy_to_user_service(path):
             url=target_url,
             headers=headers,
             data=data,
+            files=files,
             allow_redirects=False,
             timeout=30
         )
