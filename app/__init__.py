@@ -26,12 +26,14 @@ def create_app(config_object=None):
     app.register_blueprint(main_bp)
     
     # API blueprints ported from Node
-    from app.blueprints.users import bp as users_bp
+    # NOTE: Users blueprint moved to User-Service microservice
+    # Users proxy forwards /api/v1/users/* to User Service
+    from app.blueprints.users_proxy import bp as users_proxy_bp
     from app.blueprints.series import bp as series_bp
     from app.blueprints.lessons import bp as lessons_bp
-    
+
     # Register blueprints
-    app.register_blueprint(users_bp)
+    app.register_blueprint(users_proxy_bp)  # Proxy to User Service
     app.register_blueprint(series_bp)
     app.register_blueprint(lessons_bp)
     

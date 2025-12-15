@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any, List
 from app.utils.mongodb import get_db
 from app.utils.sns import create_topic, delete_topic, subscribe_to_serie, unsubscribe_from_topic
 from app.clients.media_client import MediaServiceClient
+from app.clients.user_client import UserServiceClient
 from app.utils.ses import send_email
 from datetime import datetime, timezone
 
@@ -56,13 +57,12 @@ class SerieRepository(ABC):
 class MongoSerieRepository(SerieRepository):
     """MongoDB implementation"""
     
+    def __init__(self):
+        self._user_client = UserServiceClient()
+
     def _series_collection(self):
         _, db = get_db()
         return db["series"]
-
-    def _users_collection(self):
-        _, db = get_db()
-        return db["users"]
 
     def find_by_id(self, serie_id: str) -> Optional[Dict[str, Any]]:
         from bson import ObjectId
@@ -90,22 +90,31 @@ class MongoSerieRepository(SerieRepository):
                 "isPublish": True
             }))
     
-    def find_subscribed_by_user(self, user_id: str) -> List[Dict[str, Any]]:
-        user_col = self._users_collection()
+    def find_subscribed_by_user(self, user_id: str, token: str = None) -> List[Dict[str, Any]]:
+        """
+        Get series subscribed by user
+        Calls User Service to get subscription IDs
+        """
         serie_col = self._series_collection()
-        
-        user = user_col.find_one({"_id": user_id}, {"serie_subcribe": 1})
-        if not user or not user.get("serie_subcribe"):
+
+        # Get subscription IDs from User Service
+        if not token:
+            print("Warning: No token provided for user service call")
             return []
-        
+
+        subscription_ids = self._user_client.get_subscriptions(user_id, token)
+
+        if not subscription_ids:
+            return []
+
         from bson import ObjectId
         obj_ids = []
-        for sid in user.get("serie_subcribe"):
+        for sid in subscription_ids:
             try:
                 obj_ids.append(ObjectId(sid))
             except Exception:
                 pass
-        
+
         return list(serie_col.find({"_id": {"$in": obj_ids}}))
     
     def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -159,86 +168,84 @@ class MongoSerieRepository(SerieRepository):
         
         return serie_col.find_one({"_id": ObjectId(serie_id)})
     
-    def delete(self, serie_id: str) -> bool:
+    def delete(self, serie_id: str, token: str = None) -> bool:
+        """Delete a serie and remove from all users via User Service"""
         from bson import ObjectId
         serie_col = self._series_collection()
-        user_col = self._users_collection()
-        
+
         serie = serie_col.find_one({"_id": ObjectId(serie_id)})
         if not serie:
             raise ValueError("Serie không tồn tại.")
-        
+
         if serie.get("serie_lessons") and len(serie.get("serie_lessons")) > 0:
             return False
-        
-        # Remove from users' subscriptions
-        user_col.update_many(
-            {"serie_subcribe": serie_id},
-            {"$pull": {"serie_subcribe": serie_id}, "$set": {"updatedAt": datetime.now(timezone.utc)}}
-        )
-        
+
+        # Remove from all users via User Service
+        if token:
+            try:
+                self._user_client.remove_serie_from_all(serie_id, token)
+            except Exception as e:
+                print(f"Warning: Failed to remove serie from users: {e}")
+
         # Delete SNS topic
         if serie.get("serie_sns"):
             delete_topic(serie.get("serie_sns"))
-        
+
         result = serie_col.delete_one({"_id": ObjectId(serie_id)})
-        
+
         return result.deleted_count > 0
     
-    def subscribe_user(self, serie_id: str, user_id: str) -> Dict[str, Any]:
+    def subscribe_user(self, serie_id: str, user_id: str, token: str = None) -> Dict[str, Any]:
+        """Subscribe user to serie via User Service"""
         from bson import ObjectId
         serie_col = self._series_collection()
-        user_col = self._users_collection()
-        
+
         serie = serie_col.find_one({"_id": ObjectId(serie_id)})
         if not serie or not serie.get("serie_sns"):
             raise ValueError("Serie not found")
-        
-        user = user_col.find_one({"_id": user_id})
-        if not user:
-            raise ValueError("User not found")
-        
-        if user.get("serie_subcribe") and serie_id in user.get("serie_subcribe"):
-            return {"message": "Bạn đã đăng ký series này rồi.", "alreadySubscribed": True}
-        
-        user_col.update_one(
-            {"_id": user_id},
-            {"$addToSet": {"serie_subcribe": serie_id}, "$set": {"updatedAt": datetime.now(timezone.utc)}}
-        )
-        
+
+        # Add subscription via User Service
+        if not token:
+            raise ValueError("Token required for user service call")
+
+        success = self._user_client.add_subscription(user_id, serie_id, token)
+
+        if not success:
+            # Might be already subscribed
+            return {"message": "Subscription failed or already subscribed", "alreadySubscribed": True}
+
+        # Increment subscription count
         serie_col.update_one(
             {"_id": ObjectId(serie_id)},
             {"$inc": {"serie_subcribe_num": 1}, "$set": {"updatedAt": datetime.now(timezone.utc)}}
         )
-        
+
         return {"message": "Subscribed"}
     
-    def unsubscribe_user(self, serie_id: str, user_id: str) -> Dict[str, Any]:
+    def unsubscribe_user(self, serie_id: str, user_id: str, token: str = None) -> Dict[str, Any]:
+        """Unsubscribe user from serie via User Service"""
         from bson import ObjectId
         serie_col = self._series_collection()
-        user_col = self._users_collection()
-        
+
         serie = serie_col.find_one({"_id": ObjectId(serie_id)})
         if not serie or not serie.get("serie_sns"):
             raise ValueError("Serie not found")
-        
-        user = user_col.find_one({"_id": user_id})
-        if not user:
-            raise ValueError("User not found")
-        
-        if not user.get("serie_subcribe") or serie_id not in user.get("serie_subcribe"):
-            return {"message": "Bạn chưa đăng ký serie này.", "user": user}
-        
-        user_col.update_one(
-            {"_id": user_id},
-            {"$pull": {"serie_subcribe": serie_id}, "$set": {"updatedAt": datetime.now(timezone.utc)}}
-        )
-        
+
+        # Remove subscription via User Service
+        if not token:
+            raise ValueError("Token required for user service call")
+
+        success = self._user_client.remove_subscription(user_id, serie_id, token)
+
+        if not success:
+            return {"message": "Unsubscribe failed or not subscribed"}
+
+        # Decrement subscription count
         serie_col.update_one(
             {"_id": ObjectId(serie_id)},
             {"$inc": {"serie_subcribe_num": -1}, "$set": {"updatedAt": datetime.now(timezone.utc)}}
         )
-        
+
         return {"message": "Bạn đã hủy đăng ký thành công."}
 
 
@@ -277,8 +284,8 @@ class SerieService:
     def search_series_by_title(self, keyword: str) -> List[Dict[str, Any]]:
         return self._repository.search_by_title(keyword)
     
-    def get_series_subscribed_by_user(self, user_id: str) -> List[Dict[str, Any]]:
-        return self._repository.find_subscribed_by_user(user_id)
+    def get_series_subscribed_by_user(self, user_id: str, token: str = None) -> List[Dict[str, Any]]:
+        return self._repository.find_subscribed_by_user(user_id, token)
     
     def update_serie(
         self, 
@@ -302,42 +309,42 @@ class SerieService:
         
         return self._repository.update(serie_id, data)
     
-    def subscribe_serie(self, serie_id: str, user_id: str, user_email: str) -> Dict[str, Any]:
-        result = self._repository.subscribe_user(serie_id, user_id)
-        
+    def subscribe_serie(self, serie_id: str, user_id: str, user_email: str, token: str = None) -> Dict[str, Any]:
+        result = self._repository.subscribe_user(serie_id, user_id, token)
+
         if not result.get("alreadySubscribed"):
             # Subscribe to SNS
             serie = self._repository.find_by_id(serie_id)
             if serie and serie.get("serie_sns"):
                 subscribe_to_serie(serie.get("serie_sns"), user_email)
-        
+
         return result
     
-    def unsubscribe_serie(self, serie_id: str, user_id: str, user_email: str) -> Dict[str, Any]:
+    def unsubscribe_serie(self, serie_id: str, user_id: str, user_email: str, token: str = None) -> Dict[str, Any]:
         serie = self._repository.find_by_id(serie_id)
         if serie and serie.get("serie_sns"):
             result = unsubscribe_from_topic(serie.get("serie_sns"), user_email)
             if result.get("pendingConfirmation"):
                 return result
-        
-        return self._repository.unsubscribe_user(serie_id, user_id)
+
+        return self._repository.unsubscribe_user(serie_id, user_id, token)
     
-    def delete_serie(self, serie_id: str) -> Dict[str, Any]:
+    def delete_serie(self, serie_id: str, token: str = None) -> Dict[str, Any]:
         # Get serie to delete thumbnail
         serie = self._repository.find_by_id(serie_id)
-        
-        result = self._repository.delete(serie_id)
-        
+
+        result = self._repository.delete(serie_id, token)
+
         if result is False:
             return {
                 "success": False,
                 "warning": "Không thể xóa serie khi vẫn còn bài học trong serie này."
             }
-        
+
         # Delete thumbnail qua Media Service
         if result and serie and serie.get("serie_thumbnail"):
             self._media_client.delete_file(serie.get("serie_thumbnail"))
-        
+
         return {"success": result}
 
 
@@ -359,39 +366,38 @@ def get_all_series_by_user(user_id):
 def search_series_by_title(keyword):
     return _service.search_series_by_title(keyword)
 
-def get_series_subscribed_by_user(user_id):
-    return _service.get_series_subscribed_by_user(user_id)
+def get_series_subscribed_by_user(user_id, token=None):
+    return _service.get_series_subscribed_by_user(user_id, token)
 
 def update_serie(serie_id, data, user_id=None, id_token=None, file=None):
     return _service.update_serie(serie_id, data, user_id, id_token, file)
 
-def subscribe_serie(serie_id, user_id, user_email):
-    return _service.subscribe_serie(serie_id, user_id, user_email)
+def subscribe_serie(serie_id, user_id, user_email, token=None):
+    return _service.subscribe_serie(serie_id, user_id, user_email, token)
 
-def unsubscribe_serie(serie_id, user_id, user_email):
-    return _service.unsubscribe_serie(serie_id, user_id, user_email)
+def unsubscribe_serie(serie_id, user_id, user_email, token=None):
+    return _service.unsubscribe_serie(serie_id, user_id, user_email, token)
 
-def delete_serie(serie_id):
-    return _service.delete_serie(serie_id)
+def delete_serie(serie_id, token=None):
+    return _service.delete_serie(serie_id, token)
 
-def send_series_notification(serie_id: str, title: str, message: str) -> dict:
-    _, db = get_db()
-    
+def send_series_notification(serie_id: str, title: str, message: str, token: str = None) -> dict:
+    """Send notification to all subscribers via User Service"""
+
     # 1. Lấy thông tin series
     serie = get_serie_by_id(serie_id)
     if not serie:
         raise ValueError("Khóa học không tồn tại")
-    
+
     serie_title = serie.get("serie_title", "Khóa học")
-    
-    # 2. Tìm danh sách email của những người đã subscribe khóa học này
-    subscribers = db.users.find(
-        {"serie_subcribe": serie_id},
-        {"email": 1, "_id": 0}
-    )
-    
-    recipient_list = [sub.get("email") for sub in subscribers if sub.get("email")]
-    
+
+    # 2. Tìm danh sách email của những người đã subscribe via User Service
+    if not token:
+        raise ValueError("Token required for user service call")
+
+    user_client = UserServiceClient()
+    recipient_list = user_client.get_subscribers(serie_id, token)
+
     if not recipient_list:
         return {
             "success": True,
@@ -400,7 +406,7 @@ def send_series_notification(serie_id: str, title: str, message: str) -> dict:
 
     # 3. Chuẩn bị nội dung email
     email_subject = f"[{serie_title}] Thông báo mới: {title}"
-    
+
     email_html = f"""
     <html>
     <body>
@@ -421,7 +427,7 @@ def send_series_notification(serie_id: str, title: str, message: str) -> dict:
             body_text=message,
             body_html=email_html
         )
-        
+
         return {
             "success": True,
             "recipient_count": len(recipient_list),

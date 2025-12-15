@@ -25,6 +25,14 @@ from app.utils.cache import (
 bp = Blueprint("series", __name__, url_prefix="/api/v1/series")
 
 
+def _extract_token():
+    """Extract JWT token from Authorization header"""
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        return auth_header[7:]  # Remove 'Bearer ' prefix
+    return None
+
+
 def _success_response(data, message=None, status=200):
     return Response(
         json.dumps(data, cls=JSONEncoder),
@@ -173,18 +181,19 @@ def subscribe_to_serie(serie_id):
     try:
         user_id = g.user_sub
         user_email = g.user_email
-        
+        token = _extract_token()
+
         if not user_id or not user_email:
             return _error_response("Thiếu thông tin người dùng", 400)
-        
-        result = subscribe_serie(serie_id, user_id, user_email)
-        
+
+        result = subscribe_serie(serie_id, user_id, user_email, token)
+
         # Invalidate caches
         # invalidate_series_cache(serie_id)
         # invalidate_user_cache(user_id)  # User's subscribed list changed
-        
+
         return _success_response(result)
-    
+
     except ValueError as e:
         return _error_response(str(e), 404)
     except Exception as e:
@@ -198,18 +207,19 @@ def unsubscribe_from_serie(serie_id):
     try:
         user_id = g.user_sub
         user_email = g.user_email
-        
+        token = _extract_token()
+
         if not user_id or not user_email:
             return _error_response("Thiếu thông tin người dùng", 400)
-        
-        result = unsubscribe_serie(serie_id, user_id, user_email)
-        
+
+        result = unsubscribe_serie(serie_id, user_id, user_email, token)
+
         # Invalidate caches
         # invalidate_series_cache(serie_id)
         # invalidate_user_cache(user_id)  # User's subscribed list changed
-        
+
         return _success_response(result)
-    
+
     except ValueError as e:
         return _error_response(str(e), 404)
     except Exception as e:
@@ -222,17 +232,18 @@ def delete_serie_route(serie_id):
     """Delete a series"""
     try:
         user_id = g.user_sub
-        result = delete_serie(serie_id)
-        
+        token = _extract_token()
+        result = delete_serie(serie_id, token)
+
         if not result.get("success"):
             return _error_response(result.get("warning"), 400)
-        
+
         # Invalidate caches
         # invalidate_series_cache(serie_id)
         # invalidate_user_cache(user_id)  # User's created series changed
-        
+
         return _success_response(None, "Serie deleted successfully")
-    
+
     except ValueError as e:
         return _error_response(str(e), 404)
     except Exception as e:
@@ -246,12 +257,13 @@ def send_notification_route(serie_id):
         data = request.get_json() or {}
         title = data.get("title")
         message = data.get("message")
+        token = _extract_token()
 
         if not title or not message:
             return _error_response("Tiêu đề và nội dung thông báo là bắt buộc", 400)
 
-        result = send_series_notification(serie_id, title, message)
-        
+        result = send_series_notification(serie_id, title, message, token)
+
         return _success_response(result, "Thông báo đã được gửi thành công")
 
     except ValueError as e:

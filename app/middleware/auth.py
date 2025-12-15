@@ -14,7 +14,8 @@ from jose.utils import base64url_decode
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from app.services.user_service import get_user_by_id
+# User service moved to separate microservice
+# Role will be fetched by UserServiceClient when needed
 
 AWS_REGION = os.getenv('AWS_REGION', 'ap-southeast-1')
 USER_POOL_ID = os.getenv('COGNITO_USER_POOL_ID')
@@ -274,12 +275,9 @@ def authenticate_jwt(f):
                 g.user_sub = payload['sub'] # ID
                 g.user_email = payload.get('email')
                 g.user_name = payload.get('name') or payload.get('cognito:username')
-                user_in_db = get_user_by_id(g.user_sub)
 
-                if user_in_db:
-                    g.user_role = user_in_db.get('role', 'student')
-                else:
-                    g.user_role = 'student'
+                # Default role - services can call User Service if they need real role
+                g.user_role = 'student'
             else:
                  return jsonify({"message": "Unable to find appropriate key"}), 401
 
