@@ -18,22 +18,9 @@ def create_app(config_object=None):
     """Application factory for the Flask app."""
     app = Flask(__name__, static_folder=None)
 
-    # Disable strict slashes to allow both /endpoint and /endpoint/
-    app.url_map.strict_slashes = False
-
     # Configure CORS with origins from environment
-    cors_origins_str = os.getenv('CORS_ORIGINS', 'http://localhost:5173')
-    # Handle empty string or whitespace-only string
-    if not cors_origins_str or not cors_origins_str.strip():
-        cors_origins = ['http://localhost:5173']
-    else:
-        cors_origins = [origin.strip() for origin in cors_origins_str.split(',') if origin.strip()]
-
-    CORS(app,
-         origins=cors_origins,
-         supports_credentials=True,
-         allow_headers=['Content-Type', 'Authorization'],
-         methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
+    cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:5173').split(',')
+    CORS(app, origins=cors_origins, supports_credentials=True)
 
     if config_object:
         app.config.from_object(config_object)
@@ -46,13 +33,13 @@ def create_app(config_object=None):
     # NOTE: Users blueprint moved to User-Service microservice
     # Users proxy forwards /api/v1/users/* to User Service
     from app.blueprints.users_proxy import bp as users_proxy_bp
-    from app.blueprints.tracking import bp as tracking_bp
+    from app.blueprints.tracking_proxy import bp as tracking_proxy_bp
     from app.blueprints.series import bp as series_bp
     from app.blueprints.lessons import bp as lessons_bp
 
     # Register blueprints
     app.register_blueprint(users_proxy_bp)  # Proxy to User Service
-    app.register_blueprint(tracking_bp)  # Tracking handled in backend directly
+    app.register_blueprint(tracking_proxy_bp)  # Proxy to Tracking Service
     app.register_blueprint(series_bp)
     app.register_blueprint(lessons_bp)
     
