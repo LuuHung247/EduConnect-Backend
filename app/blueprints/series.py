@@ -73,7 +73,7 @@ def create_serie_route():
         return _error_response(str(e))
 
 
-@bp.route("/", methods=["GET"])
+@bp.route("", methods=["GET"])
 @authenticate_jwt
 # @cached_public(timeout=300)  # Cache 5 phút, public (ETag included)
 def list_series():
