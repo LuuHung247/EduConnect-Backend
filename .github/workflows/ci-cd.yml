@@ -54,6 +54,7 @@ jobs:
     needs: ci
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
+    environment: backend-env
 
     outputs:
       image_tag: ${{ steps.meta.outputs.version }}
@@ -99,7 +100,7 @@ jobs:
 
       - name: Print image tags
         run: |
-          echo "🐳 Docker image pushed with tags:"
+          echo "Docker image pushed with tags:"
           echo "${{ steps.meta.outputs.tags }}"
 
   # =========================
