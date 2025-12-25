@@ -5,14 +5,17 @@ on:
     branches:
       - main
       - develop
-      - "feature/**"
   pull_request:
     branches:
       - main
       - develop
 
-permissions:
-  contents: read
+env:
+  DOCKER_REGISTRY: docker.io
+  DOCKER_IMAGE: hunglk247/educonnect-backend
+  HELM_RELEASE: backend
+  HELM_CHART_PATH: EduConnect-Helm3/charts/backend
+  K8S_NAMESPACE: educonnect
 
 jobs:
   # =========================
@@ -22,66 +25,148 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Set up Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # 3. Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install flake8 pytest
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      # 4. Lint code
       - name: Lint with flake8
         run: |
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-      # 5. Run tests
       # - name: Run tests
-      #   run: |
-      #     pytest -q
+      #   run: pytest -q
 
   # =========================
-  # Continuous Deployment
+  # Build & Push Docker Image
+  # =========================
+  build-and-push:
+    needs: ci
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          tags: |
+            # Tag với SHA commit
+            type=sha,prefix=
+            # Tag latest cho main branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            # Tag develop cho develop branch
+            type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
+            # Tag với branch name
+            type=ref,event=branch
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Print image tags
+        run: |
+          echo "🐳 Docker image pushed with tags:"
+          echo "${{ steps.meta.outputs.tags }}"
+
+  # =========================
+  # Deploy to K3s with Helm
   # =========================
   # deploy:
-  #   needs: ci
+  #   needs: build-and-push
   #   runs-on: ubuntu-latest
-  #   if: github.ref == 'refs/heads/main'  # chỉ deploy khi push main
+  #   if: github.ref == 'refs/heads/main'
 
   #   steps:
   #     - name: Checkout code
   #       uses: actions/checkout@v4
 
-  #     - name: Set up Python
-  #       uses: actions/setup-python@v5
+  #     - name: Deploy to K3s via SSH
+  #       uses: appleboy/ssh-action@v1.0.3
   #       with:
-  #         python-version: "3.12"
+  #         host: ${{ secrets.K3S_HOST }}
+  #         username: ${{ secrets.K3S_USER }}
+  #         key: ${{ secrets.K3S_SSH_KEY }}
+  #         port: ${{ secrets.K3S_SSH_PORT || 22 }}
+  #         script: |
+  #           cd ${{ secrets.HELM_CHARTS_PATH || '/home/hunglk/EduConnect-Helm3' }}
 
-  #     - name: Install dependencies
-  #       run: |
-  #         python -m pip install --upgrade pip
-  #         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+  #           helm upgrade --install ${{ env.HELM_RELEASE }} ./charts/backend \
+  #             --namespace ${{ env.K8S_NAMESPACE }} \
+  #             --set image.repository=${{ env.DOCKER_IMAGE }} \
+  #             --set image.tag=${{ needs.build-and-push.outputs.image_tag || 'latest' }} \
+  #             --set image.pullPolicy=Always \
+  #             --wait \
+  #             --timeout 5m
 
-  #     - name: Deploy to server
-  #       env:
-  #         SSH_KEY: ${{ secrets.SSH_KEY }}
-  #         SERVER_IP: ${{ secrets.SERVER_IP }}
-  #         SERVER_USER: ${{ secrets.SERVER_USER }}
-  #       run: |
-  #         echo "$SSH_KEY" > ssh_key
-  #         chmod 600 ssh_key
-  #         scp -i ssh_key -r * $SERVER_USER@$SERVER_IP:/var/www/flask-app/
-  #         ssh -i ssh_key $SERVER_USER@$SERVER_IP "
-  #           cd /var/www/flask-app &&
-  #           sudo systemctl restart flask
-  #         "
+  #           kubectl rollout status deployment/backend -n ${{ env.K8S_NAMESPACE }} --timeout=300s
+  #           echo "✅ Backend deployed successfully!"
+  #           kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l app=backend
+
+  # =========================
+  # Deploy to Develop Environment
+  # =========================
+  # deploy-develop:
+  #   needs: build-and-push
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/develop'
+
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+
+  #     - name: Deploy to K3s Dev via SSH
+  #       uses: appleboy/ssh-action@v1.0.3
+  #       with:
+  #         host: ${{ secrets.K3S_HOST }}
+  #         username: ${{ secrets.K3S_USER }}
+  #         key: ${{ secrets.K3S_SSH_KEY }}
+  #         port: ${{ secrets.K3S_SSH_PORT || 22 }}
+  #         script: |
+  #           cd ${{ secrets.HELM_CHARTS_PATH || '/home/hunglk/EduConnect-Helm3' }}
+
+  #           helm upgrade --install backend-dev ./charts/backend \
+  #             --namespace educonnect-dev \
+  #             --create-namespace \
+  #             --set image.repository=${{ env.DOCKER_IMAGE }} \
+  #             --set image.tag=develop \
+  #             --set image.pullPolicy=Always \
+  #             --set replicaCount=1 \
+  #             --wait \
+  #             --timeout 5m
+
+  #           kubectl rollout status deployment/backend -n educonnect-dev --timeout=300s
+  #           echo "✅ Backend (dev) deployed successfully!"

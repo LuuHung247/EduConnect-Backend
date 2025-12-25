@@ -35,11 +35,13 @@ def create_app(config_object=None):
     from app.blueprints.users_proxy import bp as users_proxy_bp
     from app.blueprints.series import bp as series_bp
     from app.blueprints.lessons import bp as lessons_bp
+    from app.blueprints.tracking import bp as tracking_bp
 
     # Register blueprints
     app.register_blueprint(users_proxy_bp)  # Proxy to User Service
     app.register_blueprint(series_bp)
     app.register_blueprint(lessons_bp)
+    app.register_blueprint(tracking_bp)  # Tracking for AI chatbot
     
     # Initialize cache
     from app.utils.cache import init_cache
